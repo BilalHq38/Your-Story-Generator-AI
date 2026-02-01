@@ -16,19 +16,23 @@
   "routes": [
     {
       "src": "/api/v1/(.*)",
-      "dest": "api/index.py"
+      "dest": "/api/index.py"
     },
     {
       "src": "/docs",
-      "dest": "api/index.py"
+      "dest": "/api/index.py"
+    },
+    {
+      "src": "/redoc",
+      "dest": "/api/index.py"
     },
     {
       "src": "/openapi.json",
-      "dest": "api/index.py"
+      "dest": "/api/index.py"
     },
     {
       "src": "/(.*)",
-      "dest": "Frontend/$1"
+      "dest": "/Frontend/$1"
     }
   ],
   "env": {
