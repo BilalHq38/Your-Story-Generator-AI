@@ -1,19 +1,8 @@
 {
   "version": 2,
   "name": "story-teller",
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "Frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
+  "buildCommand": "npm install --prefix Frontend && npm run build --prefix Frontend",
+  "outputDirectory": "Frontend/dist",
   "routes": [
     {
       "src": "/api/v1/(.*)",
