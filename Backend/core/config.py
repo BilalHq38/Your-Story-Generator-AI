@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     
     model_config = SettingsConfigDict(
         # Use an absolute path so running from repo root still loads Backend/.env
-        env_file=str(_ENV_FILE),
+        # In production (Vercel), this file won't exist and env vars come from dashboard
+        env_file=str(_ENV_FILE) if _ENV_FILE.exists() else None,
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
