@@ -67,7 +67,6 @@ export default function AudioPlayer({
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [audioReady, setAudioReady] = useState(!!preloadedAudioUrl)
   
   // Voice settings
   const [gender, setGender] = useState<VoiceGender>('female')
@@ -81,7 +80,6 @@ export default function AudioPlayer({
   useEffect(() => {
     if (preloadedAudioUrl && preloadedAudioUrl !== audioUrl) {
       setAudioUrl(preloadedAudioUrl)
-      setAudioReady(true)
       if (audioRef.current) {
         audioRef.current.src = preloadedAudioUrl
         audioRef.current.load()
