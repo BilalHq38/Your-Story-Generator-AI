@@ -31,8 +31,16 @@
       "dest": "/api/index.py"
     },
     {
-      "src": "/(.*)",
+      "src": "/assets/(.*)",
+      "dest": "/Frontend/assets/$1"
+    },
+    {
+      "src": "/(.*\\..+)",
       "dest": "/Frontend/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/Frontend/index.html"
     }
   ],
   "env": {
