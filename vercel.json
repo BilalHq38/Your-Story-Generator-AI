@@ -1,22 +1,9 @@
 {
   "version": 2,
   "name": "story-teller",
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "50mb"
-      }
-    },
-    {
-      "src": "Frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
+  "buildCommand": "cd Frontend && npm run build",
+  "outputDirectory": "Frontend/dist",
+  "installCommand": "cd Frontend && npm install",
   "routes": [
     {
       "src": "/api/v1/(.*)",
