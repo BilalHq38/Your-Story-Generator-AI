@@ -8,7 +8,7 @@ backend_path = current_dir.parent / "Backend"
 sys.path.insert(0, str(backend_path))
 
 # Import the FastAPI app from Backend
-from main import app
+from Backend.main import app
 
 # Vercel expects a variable named 'app'
 # This is the ASGI application that Vercel will invoke
