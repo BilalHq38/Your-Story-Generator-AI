@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import Response
 
 from core.tts import get_tts_service, NarratorType
+from ai.edge_tts_service import NARRATOR_SPEED
 from schema.story import (
     TTSRequest, 
     VoiceGender,
@@ -25,15 +26,15 @@ tts_service = get_tts_service()
 )
 async def get_languages() -> dict:
     """
-    Get all supported languages for MMS-TTS.
+    Get all supported languages for Edge TTS.
     
-    MMS-TTS supports 1,100+ languages including English and Urdu.
+    Edge TTS supports multiple languages including English and Urdu.
     """
     languages = tts_service.list_supported_languages()
     return {
         "languages": languages,
         "default": "english",
-        "note": "MMS-TTS provides one high-quality voice per language",
+        "note": "Edge TTS provides male and female voices per language",
     }
 
 
@@ -45,7 +46,6 @@ async def get_narrator_speeds() -> dict:
     """
     Get the speech speed multipliers for each narrator persona.
     """
-    from ai.mms_tts import NARRATOR_SPEED
     
     return {
         "speeds": {

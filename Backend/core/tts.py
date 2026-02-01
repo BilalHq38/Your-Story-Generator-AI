@@ -1,8 +1,8 @@
 """
-Text-to-Speech service using Meta MMS-TTS (local model).
+Text-to-Speech service using Edge TTS (cloud-based).
 
-This module provides a simple interface for text-to-speech using the locally
-running Meta MMS-TTS model which supports 1,100+ languages including English and Urdu.
+This module provides a simple interface for text-to-speech using Microsoft Edge's
+TTS API which is lightweight and works in serverless environments.
 """
 
 import hashlib
@@ -10,31 +10,28 @@ import logging
 from pathlib import Path
 from typing import Literal, Optional
 
-from ai.mms_tts import get_mms_tts_service, NarratorType
+from ai.edge_tts_service import get_edge_tts_service, NarratorType, VoiceGender
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 
-# Voice gender type (for API compatibility)
-VoiceGender = Literal["male", "female"]
-
-# Re-export NarratorType for compatibility
-__all__ = ["TTSService", "VoiceGender", "NarratorType"]
+# Re-export types for compatibility
+__all__ = ["TTSService", "VoiceGender", "NarratorType", "get_tts_service"]
 
 
 class TTSService:
     """
-    Text-to-Speech service using Meta MMS-TTS.
+    Text-to-Speech service using Edge TTS.
     
     This service provides high-quality, multilingual text-to-speech
-    using the locally running MMS-TTS model. No API keys or rate limits.
+    using Microsoft Edge's cloud TTS. No API keys required.
     """
     
     _instance: Optional["TTSService"] = None
     
     def __init__(self):
-        self._mms_service = get_mms_tts_service()
-        logger.info("TTS Service initialized with MMS-TTS backend")
+        self._edge_service = get_edge_tts_service()
+        logger.info("TTS Service initialized with Edge TTS backend")
     
     @classmethod
     def get_instance(cls) -> "TTSService":
@@ -46,41 +43,41 @@ class TTSService:
     async def synthesize(
         self,
         text: str,
-        voice: Optional[str] = None,  # Ignored for MMS-TTS (single voice per language)
-        gender: Optional[VoiceGender] = None,  # Ignored for MMS-TTS
+        voice: Optional[str] = None,
+        gender: Optional[VoiceGender] = "female",
         narrator: Optional[NarratorType] = None,
-        rate: Optional[str] = None,  # Ignored, use speed instead
-        pitch: Optional[str] = None,  # Ignored
+        rate: Optional[str] = None,
+        pitch: Optional[str] = None,
         language: str = "english",
         speed: Optional[float] = None,
-        **kwargs,  # Ignore other params for backward compatibility
+        **kwargs,
     ) -> tuple[bytes, str]:
         """
-        Generate speech from text using MMS-TTS.
+        Generate speech from text using Edge TTS.
         
         Args:
             text: Text to convert to speech
-            voice: Ignored (MMS-TTS has one voice per language)
-            gender: Ignored (MMS-TTS has one voice per language)
+            voice: Ignored (voice selected by language and gender)
+            gender: Voice gender (male/female)
             narrator: Narrator persona (affects speech speed)
-            rate: Ignored (use speed parameter instead)
-            pitch: Ignored (not supported by MMS-TTS)
+            rate: Ignored (use narrator or speed)
+            pitch: Ignored (not supported)
             language: Language name or code (english, urdu, etc.)
-            speed: Speech speed multiplier (0.5-2.0)
+            speed: Speech speed multiplier (use narrator instead)
         
         Returns:
             Tuple of (audio_bytes, content_type)
         """
-        logger.info(f"TTS request: language={language}, narrator={narrator}, {len(text)} chars")
+        logger.info(f"TTS request: language={language}, gender={gender}, narrator={narrator}, {len(text)} chars")
         
-        audio_bytes = await self._mms_service.synthesize(
+        audio_bytes = await self._edge_service.generate_speech_async(
             text=text,
             language=language,
+            gender=gender or "female",
             narrator=narrator,
-            speed=speed,
         )
         
-        return audio_bytes, "audio/wav"
+        return audio_bytes, "audio/mpeg"
     
     def list_supported_languages(self) -> list[str]:
         """List all supported languages."""

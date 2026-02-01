@@ -1,6 +1,6 @@
 # AI Module
-# Contains local AI models for text-to-speech and other tasks
+# Contains AI services for text-to-speech and other tasks
 
-from .mms_tts import MMSTTSService, get_mms_tts_service, generate_speech
+from .edge_tts_service import EdgeTTSService, get_edge_tts_service
 
-__all__ = ["MMSTTSService", "get_mms_tts_service", "generate_speech"]
+__all__ = ["EdgeTTSService", "get_edge_tts_service"]
