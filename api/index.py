@@ -1,13 +1,14 @@
 """Vercel serverless function entry point."""
+
 import sys
 from pathlib import Path
 
-# Add Backend to path so imports work correctly
-current_dir = Path(__file__).parent.absolute()
-backend_path = current_dir.parent / "Backend"
-sys.path.insert(0, str(backend_path))
+# Ensure the repository root is on sys.path so `import Backend.*` works.
+# Vercel deploys with a working directory like `/var/task`.
+repo_root = Path(__file__).resolve().parents[1]
+if str(repo_root) not in sys.path:
+	sys.path.insert(0, str(repo_root))
 
-# Import the FastAPI app from Backend
 from Backend.main import app
 
 # Vercel expects a variable named 'app'

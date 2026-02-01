@@ -159,13 +159,16 @@ async def list_stories(
     query = query.order_by(Story.created_at.desc()).offset(offset).limit(size)
     
     stories = db.execute(query).scalars().all()
+
+    total_pages = ceil(total / size) if total > 0 else 1
     
     return StoryListResponse(
         items=list(stories),
         total=total,
         page=page,
         size=size,
-        pages=ceil(total / size) if total > 0 else 1,
+        pages=total_pages,
+        total_pages=total_pages,
     )
 
 

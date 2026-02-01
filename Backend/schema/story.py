@@ -184,6 +184,7 @@ class PaginatedResponse(BaseModel):
     page: int
     size: int
     pages: int
+    total_pages: int
 
 
 class StoryListResponse(BaseModel):
@@ -194,6 +195,7 @@ class StoryListResponse(BaseModel):
     page: int = 1
     size: int = 20
     pages: int = 1
+    total_pages: int = 1
 
 
 # ============ Job Response Schemas ============
