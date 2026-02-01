@@ -1,9 +1,8 @@
 {
   "version": 2,
   "name": "story-teller",
-  "buildCommand": "cd Frontend && npm run build",
+  "buildCommand": "npm install --prefix Frontend && cd Frontend && npm run build",
   "outputDirectory": "Frontend/dist",
-  "installCommand": "cd Frontend && npm install",
   "routes": [
     {
       "src": "/api/v1/(.*)",
