@@ -8,6 +8,7 @@ Uses Microsoft Edge's text-to-speech API (free, no API key required).
 import asyncio
 import hashlib
 import logging
+import os
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -49,14 +50,24 @@ class EdgeTTSService:
         Initialize Edge TTS service.
         
         Args:
-            cache_dir: Directory to cache generated audio files
+            cache_dir: Directory to cache generated audio files (uses /tmp in serverless)
         """
-        self.cache_dir = cache_dir or Path("cache/tts")
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Edge TTS service initialized with cache: {self.cache_dir}")
+        # Use /tmp in serverless environments (Vercel, AWS Lambda, etc.)
+        if cache_dir is None:
+            cache_dir = Path("/tmp/tts") if os.path.exists("/tmp") else Path("cache/tts")
+        
+        self.cache_dir = cache_dir
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Edge TTS service initialized with cache: {self.cache_dir}")
+        except (OSError, PermissionError) as e:
+            logger.warning(f"Could not create cache directory: {e}. Caching disabled.")
+            self.cache_dir = None
     
-    def _get_cache_path(self, text: str, language: str, gender: str, narrator: Optional[str] = None) -> Path:
+    def _get_cache_path(self, text: str, language: str, gender: str, narrator: Optional[str] = None) -> Optional[Path]:
         """Generate cache file path based on input parameters."""
+        if not self.cache_dir:
+            return None
         cache_key = f"{text}_{language}_{gender}_{narrator}"
         file_hash = hashlib.md5(cache_key.encode()).hexdigest()
         return self.cache_dir / f"{file_hash}.mp3"
@@ -97,7 +108,7 @@ class EdgeTTSService:
         """
         # Check cache first
         cache_path = self._get_cache_path(text, language, gender, narrator)
-        if cache_path.exists():
+        if cache_path and cache_path.exists():
             logger.info(f"Using cached audio: {cache_path.name}")
             return cache_path.read_bytes()
         
@@ -109,11 +120,23 @@ class EdgeTTSService:
         
         communicate = edge_tts.Communicate(text, voice, rate=rate)
         
-        # Save to cache
-        await communicate.save(str(cache_path))
+        # Save to cache if available
+        if cache_path:
+            try:
+                await communicate.save(str(cache_path))
+                logger.info(f"Audio generated and cached: {cache_path.name}")
+                return cache_path.read_bytes()
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Could not cache audio: {e}. Returning without cache.")
         
-        logger.info(f"Audio generated and cached: {cache_path.name}")
-        return cache_path.read_bytes()
+        # If no cache, generate and return audio bytes directly
+        audio_bytes = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_bytes += chunk["data"]
+        
+        logger.info("Audio generated without caching")
+        return audio_bytes
     
     def generate_speech(
         self,
