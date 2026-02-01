@@ -27,17 +27,10 @@
       "src": "/openapi.json",
       "dest": "/api/index.py"
     },
-    {
-      "src": "/assets/(.*)",
-      "dest": "/Frontend/dist/assets/$1"
-    },
-    {
-      "src": "/(.*\\.[a-z0-9]+)$",
-      "dest": "/Frontend/dist/$1"
-    },
+    { "handle": "filesystem" },
     {
       "src": "/(.*)",
-      "dest": "/Frontend/dist/index.html"
+      "dest": "/index.html"
     }
   ],
   "env": {
