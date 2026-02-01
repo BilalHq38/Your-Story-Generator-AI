@@ -55,10 +55,11 @@ app = FastAPI(
     title=settings.api_title,
     description="An API for creating and managing choose-your-own-adventure stories powered by AI.",
     version=settings.api_version,
-    docs_url="/docs" if settings.is_development else None,
-    redoc_url="/redoc" if settings.is_development else None,
-    openapi_url="/openapi.json" if settings.is_development else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 # Register exception handlers
