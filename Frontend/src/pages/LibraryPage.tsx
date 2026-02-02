@@ -14,11 +14,15 @@ export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const pageSize = 9
 
-  // Fetch stories
+  // Fetch stories (use caching to reduce repeated loads)
   const { data, isLoading } = useQuery({
     queryKey: ['stories', page, pageSize],
     queryFn: () => storyApi.getStories(page, pageSize),
     placeholderData: (previousData) => previousData,
+    keepPreviousData: true,
+    staleTime: 1000 * 30, // 30s
+    cacheTime: 1000 * 60 * 5, // 5 minutes
+    retry: 1,
   })
 
   // Delete story mutation  

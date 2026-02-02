@@ -5,6 +5,7 @@ import {
   Pause, 
   Volume2, 
   VolumeX, 
+  Volume1,
   User, 
   Loader2,
   Settings,
@@ -63,6 +64,8 @@ export default function AudioPlayer({
   const [isLoading, setIsLoading] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false)
+  const [volume, setVolume] = useState(1)
   const [audioUrl, setAudioUrl] = useState<string | null>(preloadedAudioUrl || null)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
@@ -105,6 +108,35 @@ export default function AudioPlayer({
       setIsPlaying(false)
     }
   }, [text])
+
+  // Reset audio when voice settings change (gender or narrator toggle) and auto-play
+  useEffect(() => {
+    if (audioUrl) {
+      // Stop current audio
+      if (audioRef.current) {
+        audioRef.current.pause()
+      }
+      URL.revokeObjectURL(audioUrl)
+      setAudioUrl(null)
+      setProgress(0)
+      setIsPlaying(false)
+      
+      // Auto-regenerate and play with new settings
+      const regenerateAndPlay = async () => {
+        await generateAudio()
+        if (audioRef.current && audioRef.current.src) {
+          try {
+            await audioRef.current.play()
+            setIsPlaying(true)
+            onPlayStateChange?.(true)
+          } catch (e) {
+            console.log('Auto-play prevented by browser')
+          }
+        }
+      }
+      regenerateAndPlay()
+    }
+  }, [gender, useNarratorVoice])
 
   // Handle audio events
   useEffect(() => {
@@ -224,9 +256,34 @@ export default function AudioPlayer({
 
   const toggleMute = () => {
     if (audioRef.current) {
-      audioRef.current.muted = !isMuted
-      setIsMuted(!isMuted)
+      if (isMuted) {
+        audioRef.current.muted = false
+        audioRef.current.volume = volume
+        setIsMuted(false)
+      } else {
+        audioRef.current.muted = true
+        setIsMuted(true)
+      }
     }
+  }
+
+  const handleVolumeChange = (newVolume: number) => {
+    setVolume(newVolume)
+    if (audioRef.current) {
+      audioRef.current.volume = newVolume
+      if (newVolume === 0) {
+        setIsMuted(true)
+      } else if (isMuted) {
+        setIsMuted(false)
+        audioRef.current.muted = false
+      }
+    }
+  }
+
+  const getVolumeIcon = () => {
+    if (isMuted || volume === 0) return <VolumeX className="w-4 h-4" />
+    if (volume < 0.5) return <Volume1 className="w-4 h-4" />
+    return <Volume2 className="w-4 h-4" />
   }
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -264,26 +321,26 @@ export default function AudioPlayer({
     <div className={`relative ${className}`}>
       <audio ref={audioRef} preload="none" />
       
-      {/* Narrator voice indicator */}
+      {/* Narrator voice indicator - More colorful */}
       {narratorInfo && useNarratorVoice && (
-        <div className="flex items-center gap-2 mb-2 text-xs text-story-muted">
-          <Sparkles className="w-3 h-3" />
-          <span>
-            Voice: <span className="text-story-accent">{narratorInfo.name}</span>
-            {narratorVoiceStyle && (
-              <span className="ml-1 opacity-70">• {narratorVoiceStyle.description}</span>
-            )}
+        <div className="flex items-center gap-2 mb-3 text-sm">
+          <Sparkles className="w-4 h-4 text-amber-400" />
+          <span className="text-white font-medium">
+            Voice: <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-300 to-cyan-400">{narratorInfo.name}</span>
           </span>
+          {narratorVoiceStyle && (
+            <span className="text-cyan-300/80 italic">• {narratorVoiceStyle.description}</span>
+          )}
         </div>
       )}
       
       {/* Main player controls */}
-      <div className="flex items-center gap-3 p-3 bg-story-card/50 rounded-xl border border-story-border/50 backdrop-blur-sm">
-        {/* Play/Pause button */}
+      <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-story-card/60 via-story-card/40 to-story-card/60 rounded-xl border border-story-accent/30 backdrop-blur-sm shadow-lg shadow-story-accent/5">
+        {/* Play/Pause button - More colorful */}
         <button
           onClick={togglePlay}
           disabled={isLoading || !text}
-          className="flex items-center justify-center w-10 h-10 rounded-full bg-story-accent hover:bg-story-accent/80 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center justify-center w-11 h-11 rounded-full bg-gradient-to-br from-story-accent via-purple-500 to-cyan-500 hover:from-story-accent/90 hover:via-purple-500/90 hover:to-cyan-500/90 text-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-story-accent/30 hover:shadow-story-accent/50 hover:scale-105"
         >
           {isLoading ? (
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -294,51 +351,83 @@ export default function AudioPlayer({
           )}
         </button>
 
-        {/* Progress bar */}
+        {/* Progress bar - More colorful */}
         <div 
-          className="flex-1 h-2 bg-story-border/50 rounded-full cursor-pointer overflow-hidden"
+          className="flex-1 h-2.5 bg-gray-700/50 rounded-full cursor-pointer overflow-hidden group"
           onClick={handleSeek}
         >
           <motion.div
-            className="h-full bg-story-accent rounded-full"
+            className="h-full bg-gradient-to-r from-story-accent via-purple-400 to-cyan-400 rounded-full relative"
             style={{ width: `${progress}%` }}
             transition={{ duration: 0.1 }}
-          />
+          >
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+          </motion.div>
         </div>
 
-        {/* Time display */}
+        {/* Time display - More colorful */}
         {duration > 0 && (
-          <span className="text-xs text-story-muted min-w-[45px]">
+          <span className="text-xs font-medium text-cyan-300 min-w-[45px]">
             {formatTime((progress / 100) * duration)}
           </span>
         )}
 
-        {/* Mute button */}
-        <button
-          onClick={toggleMute}
-          className="p-2 text-story-muted hover:text-story-text transition-colors"
+        {/* Volume button with slider */}
+        <div 
+          className="relative"
+          onMouseEnter={() => setShowVolumeSlider(true)}
+          onMouseLeave={() => setShowVolumeSlider(false)}
         >
-          {isMuted ? (
-            <VolumeX className="w-4 h-4" />
-          ) : (
-            <Volume2 className="w-4 h-4" />
-          )}
-        </button>
+          <button
+            onClick={toggleMute}
+            className="p-2 text-amber-400 hover:text-amber-300 hover:bg-amber-500/20 rounded-lg transition-all duration-200"
+          >
+            {getVolumeIcon()}
+          </button>
+          
+          {/* Volume slider popup */}
+          <AnimatePresence>
+            {showVolumeSlider && (
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 5 }}
+                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-3 bg-gray-900 border border-gray-700 rounded-xl shadow-xl z-50"
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-xs text-gray-400">{Math.round(volume * 100)}%</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                    className="w-24 h-2 appearance-none bg-gray-700 rounded-full cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-gradient-to-r [&::-webkit-slider-thumb]:from-amber-400 [&::-webkit-slider-thumb]:to-yellow-300 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg"
+                    style={{
+                      background: `linear-gradient(to right, #fbbf24 0%, #fbbf24 ${(isMuted ? 0 : volume) * 100}%, #374151 ${(isMuted ? 0 : volume) * 100}%, #374151 100%)`
+                    }}
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
-        {/* Settings button */}
+        {/* Settings button - More colorful */}
         <button
           onClick={() => setShowSettings(!showSettings)}
-          className={`p-2 transition-colors ${showSettings ? 'text-story-accent' : 'text-story-muted hover:text-story-text'}`}
+          className={`p-2 rounded-lg transition-all duration-200 ${showSettings ? 'text-cyan-400 bg-cyan-500/20' : 'text-purple-400 hover:text-purple-300 hover:bg-purple-500/20'}`}
         >
           <Settings className="w-4 h-4" />
         </button>
 
-        {/* Regenerate button */}
+        {/* Regenerate button - More colorful */}
         {audioUrl && (
           <button
             onClick={regenerateAudio}
             disabled={isLoading}
-            className="p-2 text-story-muted hover:text-story-text transition-colors disabled:opacity-50"
+            className="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/20 rounded-lg transition-all duration-200 disabled:opacity-50"
             title="Regenerate with new settings"
           >
             <RefreshCw className="w-4 h-4" />

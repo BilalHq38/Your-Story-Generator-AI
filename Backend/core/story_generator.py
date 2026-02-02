@@ -1,4 +1,4 @@
-"""Story generator using LangChain and Gemini."""
+"""Story generator using LangChain and Groq."""
 
 import logging
 import re
@@ -76,27 +76,27 @@ ATMOSPHERE_PROMPTS_URDU = {
 
 
 class StoryGenerator:
-    """Generates story content using Gemini AI via LangChain."""
+    """Generates story content using Groq AI via LangChain."""
     
     def __init__(self, model_name: Optional[str] = None):
         """Initialize the story generator."""
-        if not settings.gemini_api_key:
-            logger.warning("Gemini API key not set (GEMINI_API_KEY/GOOGLE_API_KEY) - generation will fail")
+        if not settings.groq_api_key:
+            logger.warning("Groq API key not set (GROQ_API_KEY) - generation will fail")
 
-        self.model_name = model_name or getattr(settings, "gemini_model", "gemini-2.5-flash")
+        # Use faster model by default for real-time performance
+        self.model_name = model_name or getattr(settings, "groq_model", "llama-3.1-8b-instant")
         self.llm = None
         self._initialized = False
 
     def _model_fallbacks(self) -> list[str]:
         """Ordered list of model names to try if the current one fails."""
         candidates = [
-            getattr(settings, "gemini_model", ""),
+            getattr(settings, "groq_model", ""),
             self.model_name,
-            # Fallback models when quota exhausted or rate limited
-            "gemini-2.5-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-3.0-flash",
-
+            # Fallback models - fastest first
+            "llama-3.1-8b-instant",
+            "llama-3.3-70b-versatile",
+            "mixtral-8x7b-32768",
         ]
         seen: set[str] = set()
         ordered: list[str] = []
@@ -112,24 +112,187 @@ class StoryGenerator:
             return
         
         try:
-            from langchain_google_genai import ChatGoogleGenerativeAI
+            from langchain_groq import ChatGroq
 
-            api_key = settings.gemini_api_key
+            api_key = settings.groq_api_key
             if not api_key:
                 raise ValueError(
-                    "Gemini API key required. Set GEMINI_API_KEY (or GOOGLE_API_KEY) in Backend/.env"
+                    "Groq API key required. Set GROQ_API_KEY in Backend/.env"
                 )
             
-            self.llm = ChatGoogleGenerativeAI(
+            self.llm = ChatGroq(
                 model=self.model_name,
-                google_api_key=api_key,
-                temperature=0.85,
-                max_tokens=2500,
+                api_key=api_key,
+                temperature=0.8,
+                max_tokens=3000,
+                timeout=30,  # Faster timeout
+                max_retries=1,  # Reduce retries for speed
             )
             self._initialized = True
         except ImportError:
-            logger.error("langchain_google_genai not installed. Run: uv add langchain-google-genai")
-            raise ImportError("langchain_google_genai not installed. Run: uv add langchain-google-genai")
+            logger.error("langchain_groq not installed. Run: uv add langchain-groq")
+            raise ImportError("langchain_groq not installed. Run: uv add langchain-groq")
+    
+    def _build_story_context(self, story: Any, parent_node: Optional[Any] = None) -> str:
+        """
+        Build context from story memory and previous nodes for continuity.
+        
+        Returns a context string with characters, events, and story summary.
+        """
+        context_parts = []
+        
+        # Get stored story context (characters, events, etc.)
+        story_context = getattr(story, 'story_context', None) or {}
+        
+        # Add characters
+        characters = story_context.get('characters', [])
+        if characters:
+            char_list = ", ".join(characters[:5])  # Limit to 5 main characters
+            context_parts.append(f"Main characters: {char_list}")
+        
+        # Add key events summary
+        key_events = story_context.get('key_events', [])
+        if key_events:
+            events_summary = "; ".join(key_events[-3:])  # Last 3 key events
+            context_parts.append(f"Recent events: {events_summary}")
+        
+        # Add current situation
+        current_situation = story_context.get('current_situation', '')
+        if current_situation:
+            context_parts.append(f"Current situation: {current_situation}")
+        
+        # Build path context from parent nodes (last 2-3 nodes for continuity)
+        if parent_node:
+            path_content = []
+            current = parent_node
+            depth = 0
+            while current and depth < 2:
+                # Get abbreviated content (first 100 chars)
+                content_preview = current.content[:150] + "..." if len(current.content) > 150 else current.content
+                path_content.append(content_preview)
+                current = getattr(current, 'parent', None)
+                depth += 1
+            
+            if path_content:
+                path_content.reverse()
+                context_parts.append(f"Story so far: {' → '.join(path_content)}")
+        
+        return "\n".join(context_parts) if context_parts else ""
+    
+    def extract_context_updates(self, content: str, existing_context: Optional[dict] = None) -> dict:
+        """
+        Extract characters and key events from generated content to update story context.
+        
+        Returns updated context dict with characters, key_events, and current_situation.
+        """
+        context = existing_context.copy() if existing_context else {
+            'characters': [],
+            'key_events': [],
+            'current_situation': '',
+            'story_summary': '',
+        }
+        
+        # Simple extraction: look for proper nouns (capitalized words that appear multiple times)
+        # This is a basic heuristic - could be improved with NLP
+        import re
+        
+        # Find potential character names (capitalized words not at sentence start)
+        words = re.findall(r'(?<=[.!?]\s)[A-Z][a-z]+|(?<=\s)[A-Z][a-z]+', content)
+        name_counts = {}
+        for word in words:
+            if len(word) > 2 and word not in ['The', 'And', 'But', 'She', 'He', 'They', 'This', 'That', 'With']:
+                name_counts[word] = name_counts.get(word, 0) + 1
+        
+        # Add names that appear more than once (likely characters)
+        new_characters = [name for name, count in name_counts.items() if count >= 1]
+        existing_chars = set(context.get('characters', []))
+        for char in new_characters:
+            if char not in existing_chars:
+                context['characters'].append(char)
+        
+        # Keep only the most recent 8 characters
+        context['characters'] = context['characters'][-8:]
+        
+        # Update current situation (last sentence or two)
+        sentences = re.split(r'[.!?]+', content)
+        if sentences:
+            last_sentences = [s.strip() for s in sentences[-2:] if s.strip()]
+            context['current_situation'] = '. '.join(last_sentences)
+        
+        # Add to key events (extract action phrases)
+        # Look for verbs in past tense as key events
+        action_phrases = re.findall(r'[A-Z][^.!?]*(?:discovered|found|entered|escaped|defeated|met|learned|saw|heard|decided)[^.!?]*[.!?]', content)
+        if action_phrases:
+            context['key_events'].append(action_phrases[0][:100])
+        
+        # Keep only last 5 key events
+        context['key_events'] = context['key_events'][-5:]
+        
+        return context
+    
+    def generate_stream(
+        self,
+        job_type: str,
+        story: Any,
+        parent_node: Optional[Any] = None,
+        choice_text: Optional[str] = None,
+    ):
+        """
+        Generate story content with streaming.
+        
+        Yields tokens as they are generated, then yields final parsed result.
+        
+        Args:
+            job_type: 'generate_opening', 'generate_continuation', 'generate_ending'
+            story: The Story model instance
+            parent_node: Parent StoryNode for continuations
+            choice_text: The choice made by the user
+        
+        Yields:
+            {"type": "token", "content": str} for each token
+            {"type": "done", "content": str, "choices": list, "is_ending": bool} at end
+        """
+        self._ensure_initialized()
+        
+        try:
+            from langchain_core.messages import HumanMessage, SystemMessage
+            
+            # Build prompts
+            narrator_persona = getattr(story, 'narrator_persona', 'mysterious')
+            atmosphere = getattr(story, 'atmosphere', 'magical')
+            genre = getattr(story, 'genre', 'Fantasy')
+            language = getattr(story, 'language', 'english')
+            
+            system_prompt = self._build_system_prompt(narrator_persona, atmosphere, genre, language)
+            user_prompt = self._build_user_prompt(job_type, story, parent_node, choice_text, language)
+            
+            logger.info(f"Streaming {job_type} for story '{story.title}' in {language}")
+            
+            # Stream tokens
+            full_content = ""
+            for chunk in self.llm.stream([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]):
+                if hasattr(chunk, 'content') and chunk.content:
+                    full_content += chunk.content
+                    yield {"type": "token", "content": chunk.content}
+            
+            # Parse final result
+            parsed = self._parse_response(full_content, is_ending=(job_type == "generate_ending"))
+            
+            logger.info(f"Streamed {len(parsed['content'])} chars with {len(parsed['choices'])} choices")
+            
+            yield {
+                "type": "done",
+                "content": parsed["content"],
+                "choices": parsed["choices"],
+                "is_ending": parsed["is_ending"],
+            }
+            
+        except Exception as e:
+            logger.exception(f"Stream generation failed: {e}")
+            yield {"type": "error", "message": str(e)}
     
     def generate(
         self,
@@ -172,17 +335,17 @@ class StoryGenerator:
                     HumanMessage(content=user_prompt),
                 ])
 
-            # Synchronous invocation (with model fallback on 404, 429, or 400)
+            # Synchronous invocation (with model fallback on errors)
             def _should_switch_model(error_message: str) -> bool:
                 """Check if error warrants switching to a different model."""
-                # 404 - Model not found
-                if "NOT_FOUND" in error_message and "models/" in error_message:
+                # Model not found
+                if "model_not_found" in error_message.lower() or "invalid_model" in error_message.lower():
                     return True
-                # 429 - Rate limit exceeded / quota exhausted
-                if "429" in error_message or "RESOURCE_EXHAUSTED" in error_message or "quota" in error_message.lower():
+                # Rate limit exceeded / quota exhausted
+                if "429" in error_message or "rate_limit" in error_message.lower() or "quota" in error_message.lower():
                     return True
-                # 400 - Model doesn't support certain features (e.g., system instructions)
-                if "INVALID_ARGUMENT" in error_message and "models/" in error_message:
+                # Model doesn't support certain features
+                if "invalid_request" in error_message.lower():
                     return True
                 return False
 
@@ -198,7 +361,7 @@ class StoryGenerator:
                         logger.warning(
                             "Model '%s' unavailable (error: %s); switching to '%s'",
                             self.model_name,
-                            "rate limit" if "429" in message or "RESOURCE_EXHAUSTED" in message else "incompatible" if "INVALID_ARGUMENT" in message else "not found",
+                            "rate limit" if "429" in message or "rate_limit" in message.lower() else "incompatible" if "invalid" in message.lower() else "not found",
                             candidate,
                         )
                         try:
@@ -237,22 +400,22 @@ class StoryGenerator:
 
 {atmosphere_prompt_urdu}
 
-آپ ایک {genre} کہانی لکھ رہے ہیں۔ ان قواعد کی پیروی کریں:
-1. خالص اردو میں لکھیں، انگریزی الفاظ سے گریز کریں
-2. دوسرے شخص میں عمیق بیانیہ لکھیں ("آپ کمرے میں داخل ہوتے ہیں...")
-3. ماحول سے مطابقت رکھنے والی واضح حسی تفصیلات بنائیں
-4. ہر حصہ 150-300 الفاظ کے درمیان رکھیں
-5. 2-4 معنی خیز انتخابات بنائیں جو مختلف کہانی کے راستوں کی طرف لے جائیں
+آپ ایک {genre} کہانی لکھ رہے ہیں۔ ان اصولوں پر عمل کریں:
+1. آسان اردو میں لکھیں
+2. تیسرے شخص میں لکھیں ("وہ گیا...")
+3. کہانی تیزی سے آگے بڑھے
+4. ہر حصہ 100-150 الفاظ کا ہو
+5. 2-3 انتخابات دیں
 
-آؤٹ پٹ فارمیٹ (ہمیشہ بالکل اس طرح پیروی کریں):
+اس فارمیٹ میں لکھیں:
 [STORY]
-یہاں آپ کی کہانی کا مواد...
+کہانی...
 [/STORY]
 
 [CHOICES]
 1. پہلا انتخاب
 2. دوسرا انتخاب
-3. تیسرا انتخاب (اختیاری)
+3. تیسرا انتخاب
 [/CHOICES]
 
 [ENDING]false[/ENDING]"""
@@ -261,22 +424,22 @@ class StoryGenerator:
 
 {atmosphere_prompt}
 
-You are writing a {genre} story. Follow these rules:
-1. Write immersive, second-person narrative ("You walk into the room...")
-2. Create vivid sensory descriptions that match the atmosphere
-3. Keep each segment between 150-300 words
-4. Generate 2-4 meaningful choices that lead to different story paths
-5. Each choice should have real consequences for the narrative
+You are writing a {genre} story. Be BRIEF and FAST:
+1. Simple words only
+2. Third-person ("He went...")
+3. Focus on action, not descriptions
+4. Keep each part 100-150 words MAX
+5. Give 2-3 choices
 
-Output Format (ALWAYS follow this exactly):
+Write in this format:
 [STORY]
-Your story content here...
+Story here...
 [/STORY]
 
 [CHOICES]
-1. First choice option
-2. Second choice option  
-3. Third choice option (optional)
+1. First choice
+2. Second choice
+3. Third choice
 [/CHOICES]
 
 [ENDING]false[/ENDING]"""
@@ -292,6 +455,10 @@ Your story content here...
         """Build the user prompt based on job type, context, and language."""
         
         is_urdu = language == "urdu"
+        
+        # Build story context for continuity
+        story_context = self._build_story_context(story, parent_node)
+        context_section = f"\n\n[STORY CONTEXT]\n{story_context}\n[/STORY CONTEXT]\n" if story_context else ""
         
         if job_type == "generate_opening":
             if is_urdu:
@@ -315,24 +482,26 @@ a compelling situation, and end with choices that set up different adventure pat
             previous_content = parent_node.content if parent_node else ""
             if is_urdu:
                 prompt = f"""قاری کے انتخاب کی بنیاد پر کہانی جاری رکھیں۔
-
+{context_section}
 پچھلا منظر:
 {previous_content}
 
 قاری نے یہ انتخاب کیا: "{choice_text}"
 
+اہم: پچھلے کرداروں اور واقعات کو یاد رکھیں۔ کہانی میں تسلسل برقرار رکھیں۔
 اس انتخاب سے بیانیہ جاری رکھیں۔ فیصلے کے فوری نتائج دکھائیں،
 کہانی کو آگے بڑھائیں، اور قاری کے لیے نئے انتخابات پیش کریں۔
 
 یاد رکھیں: خالص اردو میں لکھیں۔"""
             else:
                 prompt = f"""Continue the story based on the reader's choice.
-
+{context_section}
 Previous scene:
 {previous_content}
 
 The reader chose: "{choice_text}"
 
+IMPORTANT: Maintain continuity with the characters and events mentioned above.
 Continue the narrative from this choice. Show the immediate consequences of the decision,
 develop the story, and present new choices for the reader."""
         
@@ -340,10 +509,11 @@ develop the story, and present new choices for the reader."""
             previous_content = parent_node.content if parent_node else ""
             if is_urdu:
                 prompt = f"""اس کہانی کا تسلی بخش اختتام لکھیں۔
-
+{context_section}
 پچھلا منظر:
 {previous_content}
 
+اہم: تمام اہم کرداروں کا ذکر کریں اور کہانی کے واقعات کو سمیٹیں۔
 ایک یادگار اختتام بنائیں جو بیانیہ کو سمیٹے۔ اختتام کو مناسب اور 
 سفر کے مطابق محسوس ہونا چاہیے۔ کوئی انتخابات شامل نہ کریں - یہ اختتام ہے۔
 
@@ -352,10 +522,11 @@ develop the story, and present new choices for the reader."""
 یاد رکھیں: خالص اردو میں لکھیں۔"""
             else:
                 prompt = f"""Write a satisfying ending for this story.
-
+{context_section}
 Previous scene:
 {previous_content}
 
+IMPORTANT: Reference the main characters and wrap up the story events mentioned above.
 Create a memorable conclusion that wraps up the narrative. The ending should feel earned 
 and appropriate for the journey taken. Do NOT include any choices - this is the end.
 
@@ -401,3 +572,16 @@ Set [ENDING]true[/ENDING] in your response."""
             "is_ending": is_ending or detected_ending or len(choices) == 0,
         }
 
+
+# Singleton instance for faster subsequent calls
+_generator_instance: Optional[StoryGenerator] = None
+
+
+def get_story_generator() -> StoryGenerator:
+    """Get or create a singleton StoryGenerator instance (pre-warmed)."""
+    global _generator_instance
+    if _generator_instance is None:
+        _generator_instance = StoryGenerator()
+        _generator_instance._ensure_initialized()  # Pre-warm the connection
+        logger.info("StoryGenerator singleton initialized and pre-warmed")
+    return _generator_instance

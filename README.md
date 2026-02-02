@@ -12,7 +12,7 @@ An immersive choose-your-own-adventure platform that generates dynamic, branchin
 ## 🌟 Features
 
 ### 🎭 Dynamic Story Generation
-- **AI-Powered Narratives**: Leverages Google's Gemini 2.5 Flash for intelligent story generation
+- **AI-Powered Narratives**: Leverages Groq's LLM API for intelligent story generation
 - **Branching Storylines**: Every choice creates unique narrative paths
 - **Multiple Genres**: Fantasy, sci-fi, mystery, romance, horror, and more
 - **Customizable Settings**: Choose atmosphere, narrator persona, and language
@@ -45,7 +45,7 @@ Backend/
 ├── main.py                 # FastAPI application entry point
 ├── core/
 │   ├── config.py          # Application settings
-│   ├── story_generator.py # AI story generation with Gemini
+│   ├── story_generator.py # AI story generation with Groq
 │   ├── tts.py             # Text-to-speech service
 │   ├── models.py          # Database models
 │   └── prompts.py         # AI prompts for story generation

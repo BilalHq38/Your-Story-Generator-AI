@@ -2,12 +2,14 @@
 
 import asyncio
 import base64
+import json
 import logging
 import secrets
 from math import ceil
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +20,10 @@ from models.story import Story, StoryNode
 from schema.story import (
     ContinueStoryRequest,
     JobStartResponse,
+    SaveBranchesRequest,
+    StoryBranch,
+    StoryBranchesResponse,
+    StoryBranchNode,
     StoryChoice,
     StoryCreate,
     StoryDetail,
@@ -143,27 +149,56 @@ async def list_stories(
     active_only: bool = True,
 ) -> StoryListResponse:
     """Get a paginated list of stories with optional filtering."""
-    query = select(Story)
-    
+    # Select only the fields needed for the library list to reduce payload and DB work
+    columns = [
+        Story.id,
+        Story.title,
+        Story.description,
+        Story.genre,
+        Story.narrator_persona,
+        Story.atmosphere,
+        Story.language,
+        Story.session_id,
+        Story.is_active,
+        Story.is_completed,
+        Story.root_node_id,
+        Story.current_node_id,
+        Story.created_at,
+        Story.updated_at,
+    ]
+
+    query = select(*columns)
+
     if active_only:
         query = query.where(Story.is_active == True)
     if genre:
         query = query.where(Story.genre == genre)
-    
-    # Count total
-    count_query = select(func.count()).select_from(query.subquery())
+
+    # Count total using a lightweight count query
+    count_query = select(func.count()).select_from(Story.__table__)
+    if active_only:
+        count_query = count_query.where(Story.is_active == True)
+    if genre:
+        count_query = count_query.where(Story.genre == genre)
     total = db.execute(count_query).scalar() or 0
-    
+
     # Paginate
     offset = (page - 1) * size
     query = query.order_by(Story.created_at.desc()).offset(offset).limit(size)
-    
-    stories = db.execute(query).scalars().all()
+
+    rows = db.execute(query).all()
+
+    # Map rows to lightweight dicts matching StoryResponse (omitting heavy fields)
+    items = []
+    for row in rows:
+        # row is a RowMapping; convert to dict
+        item = dict(row._mapping)
+        items.append(item)
 
     total_pages = ceil(total / size) if total > 0 else 1
-    
+
     return StoryListResponse(
-        items=list(stories),
+        items=items,
         total=total,
         page=page,
         size=size,
@@ -286,6 +321,143 @@ async def delete_story(story_id: int, db: DbSession) -> None:
     db.commit()
     
     logger.info(f"Deleted story {story_id}")
+
+
+# ============ Story Branches ============
+
+
+@router.get(
+    "/{story_id}/branches",
+    response_model=StoryBranchesResponse,
+    summary="Get story branches",
+)
+async def get_story_branches(story_id: int, db: DbSession) -> StoryBranchesResponse:
+    """
+    Get all branches of a story for reading as complete paths.
+    If branches haven't been saved yet, computes them from the story nodes.
+    """
+    story = db.execute(
+        select(Story)
+        .options(selectinload(Story.nodes))
+        .where(Story.id == story_id)
+    ).scalar_one_or_none()
+    
+    if not story:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Story with ID {story_id} not found",
+        )
+    
+    # If branches are already saved, return them
+    if story.story_branches:
+        branches = [StoryBranch(**b) for b in story.story_branches]
+        return StoryBranchesResponse(
+            story_id=story.id,
+            title=story.title,
+            complete_story_text=story.complete_story_text,
+            branches=branches,
+            total_branches=len(branches),
+            has_complete_ending=any(b.is_complete for b in branches),
+        )
+    
+    # Otherwise, compute branches from nodes
+    nodes_by_id = {node.id: node for node in story.nodes}
+    root_node = next((n for n in story.nodes if n.is_root), None)
+    
+    if not root_node:
+        return StoryBranchesResponse(
+            story_id=story.id,
+            title=story.title,
+            complete_story_text=None,
+            branches=[],
+            total_branches=0,
+            has_complete_ending=False,
+        )
+    
+    # Build all branches recursively
+    branches: list[StoryBranch] = []
+    
+    def collect_branches(node: StoryNode, path: list[StoryBranchNode]):
+        current_path = path + [StoryBranchNode(
+            id=node.id,
+            content=node.content,
+            choice_text=node.choice_text,
+            is_ending=node.is_ending,
+        )]
+        
+        # Get children
+        children = [n for n in story.nodes if n.parent_id == node.id]
+        
+        if not children or node.is_ending:
+            # This is a leaf node or ending
+            branch_id = f"branch_{len(branches) + 1}"
+            branches.append(StoryBranch(
+                id=branch_id,
+                nodes=current_path,
+                is_complete=node.is_ending,
+            ))
+        else:
+            # Continue to children
+            for child in children:
+                collect_branches(child, current_path)
+    
+    collect_branches(root_node, [])
+    
+    # Generate complete story text from the main branch (first complete branch or first branch)
+    complete_text = None
+    main_branch = next((b for b in branches if b.is_complete), branches[0] if branches else None)
+    if main_branch:
+        complete_text = "\n\n".join(node.content for node in main_branch.nodes)
+    
+    return StoryBranchesResponse(
+        story_id=story.id,
+        title=story.title,
+        complete_story_text=complete_text,
+        branches=branches,
+        total_branches=len(branches),
+        has_complete_ending=any(b.is_complete for b in branches),
+    )
+
+
+@router.post(
+    "/{story_id}/branches",
+    response_model=StoryBranchesResponse,
+    summary="Save story branches",
+)
+async def save_story_branches(
+    story_id: int,
+    branch_data: SaveBranchesRequest,
+    db: DbSession,
+) -> StoryBranchesResponse:
+    """
+    Save story branches and complete story text for later retrieval.
+    This is called when a story is completed to cache the branches.
+    """
+    story = db.get(Story, story_id)
+    
+    if not story:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Story with ID {story_id} not found",
+        )
+    
+    # Save branches as JSON
+    story.story_branches = [b.model_dump() for b in branch_data.branches]
+    story.complete_story_text = branch_data.complete_story_text
+    
+    db.commit()
+    db.refresh(story)
+    
+    logger.info(f"Saved {len(branch_data.branches)} branches for story {story_id}")
+    
+    return StoryBranchesResponse(
+        story_id=story.id,
+        title=story.title,
+        complete_story_text=story.complete_story_text,
+        branches=branch_data.branches,
+        total_branches=len(branch_data.branches),
+        has_complete_ending=any(b.is_complete for b in branch_data.branches),
+    )
 
 
 # ============ Story Node CRUD ============
@@ -470,6 +642,42 @@ async def delete_story_node(
     logger.info(f"Deleted node {node_id} from story {story_id}")
 
 
+@router.get(
+    "/{story_id}/current",
+    response_model=StoryNodeResponse,
+    summary="Get current story position",
+)
+async def get_current_node(
+    story_id: int,
+    db: DbSession,
+) -> StoryNode:
+    """Get the current/last node in the story to resume from where user left off."""
+    story = db.get(Story, story_id)
+    if not story:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Story with ID {story_id} not found",
+        )
+    
+    # If no current node, return root node
+    node_id = story.current_node_id or story.root_node_id
+    
+    if not node_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story has no nodes yet. Generate the opening first.",
+        )
+    
+    node = db.get(StoryNode, node_id)
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Current node not found",
+        )
+    
+    return node
+
+
 # ============ Story Generation Endpoints ============
 
 from models.job import Job, JobStatus, JobType
@@ -515,13 +723,13 @@ async def generate_story_opening(story_id: int, db: DbSession) -> JobStartRespon
     
     # TODO: Trigger async generation task
     # For now, we'll process synchronously for simplicity
-    from core.story_generator import StoryGenerator
+    from core.story_generator import get_story_generator
     
     try:
         job.status = JobStatus.PROCESSING
         db.commit()
         
-        generator = StoryGenerator()
+        generator = get_story_generator()
         result = generator.generate(
             job_type="generate_opening",
             story=story,
@@ -529,14 +737,7 @@ async def generate_story_opening(story_id: int, db: DbSession) -> JobStartRespon
             choice_text=None,
         )
         
-        # Generate audio for the content immediately
-        audio_url = await generate_audio_for_node(
-            content=result["content"],
-            narrator=story.narrator_persona,
-            language=story.language or "english",
-        )
-        
-        # Create the root node with audio URL
+        # Create the root node immediately (without waiting for audio)
         node = StoryNode(
             story_id=story_id,
             content=result["content"],
@@ -544,18 +745,25 @@ async def generate_story_opening(story_id: int, db: DbSession) -> JobStartRespon
             is_root=True,
             is_ending=result.get("is_ending", False),
             depth=0,
-            node_metadata={"audio_url": audio_url} if audio_url else None,
+            node_metadata=None,  # Audio will be generated on-demand
         )
         db.add(node)
         db.commit()
         db.refresh(node)
         
-        # Update story with root node reference
+        # Update story with root node reference and current position
         story.root_node_id = node.id
+        story.current_node_id = node.id  # Track current position
+        
+        # Extract and save story context for memory persistence
+        existing_context = story.story_context or {}
+        updated_context = generator.extract_context_updates(result["content"], existing_context)
+        story.story_context = updated_context
+        
         db.commit()
         
-        # Include audio in result
-        result["audio_url"] = audio_url
+        # Audio is now generated on-demand via /tts/synthesize endpoint
+        # This makes the initial response much faster
         
         job.status = JobStatus.COMPLETED
         job.node_id = node.id
@@ -624,13 +832,13 @@ async def continue_story(
     db.commit()
     db.refresh(job)
     
-    from core.story_generator import StoryGenerator
+    from core.story_generator import get_story_generator
     
     try:
         job.status = JobStatus.PROCESSING
         db.commit()
         
-        generator = StoryGenerator()
+        generator = get_story_generator()
         result = generator.generate(
             job_type="generate_continuation",
             story=story,
@@ -638,14 +846,7 @@ async def continue_story(
             choice_text=request.choice_text,
         )
         
-        # Generate audio for the content immediately
-        audio_url = await generate_audio_for_node(
-            content=result["content"],
-            narrator=story.narrator_persona,
-            language=story.language or "english",
-        )
-        
-        # Create new node with audio URL
+        # Create new node immediately (audio generated on-demand)
         new_node = StoryNode(
             story_id=story_id,
             parent_id=node_id,
@@ -654,14 +855,21 @@ async def continue_story(
             choices=result.get("choices", []),
             is_ending=result.get("is_ending", False),
             depth=node.depth + 1,
-            node_metadata={"audio_url": audio_url} if audio_url else None,
+            node_metadata=None,  # Audio will be generated on-demand
         )
         db.add(new_node)
         db.commit()
         db.refresh(new_node)
         
-        # Include audio in result
-        result["audio_url"] = audio_url
+        # Update story's current position and context
+        story.current_node_id = new_node.id
+        
+        # Extract and save story context for memory persistence
+        existing_context = story.story_context or {}
+        updated_context = generator.extract_context_updates(result["content"], existing_context)
+        story.story_context = updated_context
+        
+        db.commit()
         
         job.status = JobStatus.COMPLETED
         job.node_id = new_node.id
@@ -723,13 +931,13 @@ async def generate_story_ending(
     db.commit()
     db.refresh(job)
     
-    from core.story_generator import StoryGenerator
+    from core.story_generator import get_story_generator
     
     try:
         job.status = JobStatus.PROCESSING
         db.commit()
         
-        generator = StoryGenerator()
+        generator = get_story_generator()
         result = generator.generate(
             job_type="generate_ending",
             story=story,
@@ -737,14 +945,7 @@ async def generate_story_ending(
             choice_text=None,
         )
         
-        # Generate audio for the ending
-        audio_url = await generate_audio_for_node(
-            content=result["content"],
-            narrator=story.narrator_persona,
-            language=story.language or "english",
-        )
-        
-        # Create ending node with audio
+        # Create ending node immediately (audio generated on-demand)
         ending_node = StoryNode(
             story_id=story_id,
             parent_id=node_id,
@@ -752,18 +953,21 @@ async def generate_story_ending(
             choices=[],
             is_ending=True,
             depth=node.depth + 1,
-            node_metadata={"audio_url": audio_url} if audio_url else None,
+            node_metadata=None,  # Audio will be generated on-demand
         )
         db.add(ending_node)
         
-        # Mark story as completed
+        # Mark story as completed and update current position
         story.is_completed = True
+        story.current_node_id = ending_node.id
+        
+        # Extract and save final story context
+        existing_context = story.story_context or {}
+        updated_context = generator.extract_context_updates(result["content"], existing_context)
+        story.story_context = updated_context
         
         db.commit()
         db.refresh(ending_node)
-        
-        # Include audio in result
-        result["audio_url"] = audio_url
         
         job.status = JobStatus.COMPLETED
         job.node_id = ending_node.id
@@ -781,6 +985,228 @@ async def generate_story_ending(
         )
     
     return JobStartResponse(job_id=job.id)
+
+
+# ============ Streaming Generation Endpoints ============
+
+async def stream_story_generation(
+    story_id: int,
+    job_type: str,
+    db: DbSession,
+    parent_node_id: Optional[int] = None,
+    choice_text: Optional[str] = None,
+):
+    """
+    Generator function for streaming story content via SSE.
+    Streams tokens as they're generated, then saves the node at the end.
+    Also extracts and updates story context (characters, events) for continuity.
+    """
+    from core.story_generator import get_story_generator
+    
+    story = db.get(Story, story_id)
+    if not story:
+        yield f"data: {json.dumps({'type': 'error', 'message': 'Story not found'})}\n\n"
+        return
+    
+    parent_node = None
+    if parent_node_id:
+        parent_node = db.get(StoryNode, parent_node_id)
+        if not parent_node or parent_node.story_id != story_id:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Parent node not found'})}\n\n"
+            return
+    
+    generator = get_story_generator()
+    
+    final_result = None
+    try:
+        for chunk in generator.generate_stream(
+            job_type=job_type,
+            story=story,
+            parent_node=parent_node,
+            choice_text=choice_text,
+        ):
+            if chunk["type"] == "token":
+                yield f"data: {json.dumps(chunk)}\n\n"
+            elif chunk["type"] == "done":
+                final_result = chunk
+            elif chunk["type"] == "error":
+                yield f"data: {json.dumps(chunk)}\n\n"
+                return
+        
+        if final_result:
+            # Create the node in database
+            is_root = job_type == "generate_opening"
+            is_ending = job_type == "generate_ending" or final_result.get("is_ending", False)
+            
+            depth = 0
+            if parent_node:
+                depth = parent_node.depth + 1
+            
+            node = StoryNode(
+                story_id=story_id,
+                parent_id=parent_node_id,
+                content=final_result["content"],
+                choice_text=choice_text,
+                choices=final_result.get("choices", []) if not is_ending else [],
+                is_root=is_root,
+                is_ending=is_ending,
+                depth=depth,
+                node_metadata=None,
+            )
+            db.add(node)
+            db.commit()
+            db.refresh(node)
+            
+            # Update story references
+            if is_root:
+                story.root_node_id = node.id
+            if is_ending:
+                story.is_completed = True
+            story.current_node_id = node.id
+            
+            # Extract and update story context for memory persistence
+            existing_context = story.story_context or {}
+            updated_context = generator.extract_context_updates(
+                final_result["content"], 
+                existing_context
+            )
+            story.story_context = updated_context
+            
+            db.commit()
+            
+            # Send final message with node info
+            yield f"data: {json.dumps({'type': 'done', 'node_id': node.id, 'content': final_result['content'], 'choices': final_result.get('choices', []), 'is_ending': is_ending})}\n\n"
+    
+    except Exception as e:
+        logger.error(f"Stream generation failed: {e}")
+        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+
+@router.post(
+    "/{story_id}/stream/opening",
+    summary="Stream story opening generation",
+)
+async def stream_story_opening(story_id: int, db: DbSession):
+    """Stream the opening of the story using SSE for real-time token delivery."""
+    story = db.get(Story, story_id)
+    if not story:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Story with ID {story_id} not found",
+        )
+    
+    # Check if story already has a root node
+    existing_root = db.execute(
+        select(StoryNode).where(
+            StoryNode.story_id == story_id,
+            StoryNode.is_root == True,
+        )
+    ).scalar_one_or_none()
+    
+    if existing_root:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Story already has an opening. Use continue endpoint.",
+        )
+    
+    return StreamingResponse(
+        stream_story_generation(story_id, "generate_opening", db),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post(
+    "/{story_id}/nodes/{node_id}/stream/continue",
+    summary="Stream story continuation",
+)
+async def stream_story_continuation(
+    story_id: int,
+    node_id: int,
+    request: ContinueStoryRequest,
+    db: DbSession,
+):
+    """Stream a story continuation using SSE for real-time token delivery."""
+    story = db.get(Story, story_id)
+    if not story:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Story with ID {story_id} not found",
+        )
+    
+    node = db.execute(
+        select(StoryNode).where(
+            StoryNode.id == node_id,
+            StoryNode.story_id == story_id,
+        )
+    ).scalar_one_or_none()
+    
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Node {node_id} not found in story {story_id}",
+        )
+    
+    if node.is_ending:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot continue from an ending node.",
+        )
+    
+    return StreamingResponse(
+        stream_story_generation(story_id, "generate_continuation", db, node_id, request.choice_text),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post(
+    "/{story_id}/nodes/{node_id}/stream/ending",
+    summary="Stream story ending generation",
+)
+async def stream_story_ending(
+    story_id: int,
+    node_id: int,
+    db: DbSession,
+):
+    """Stream the story ending using SSE for real-time token delivery."""
+    story = db.get(Story, story_id)
+    if not story:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Story with ID {story_id} not found",
+        )
+    
+    node = db.execute(
+        select(StoryNode).where(
+            StoryNode.id == node_id,
+            StoryNode.story_id == story_id,
+        )
+    ).scalar_one_or_none()
+    
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Node {node_id} not found in story {story_id}",
+        )
+    
+    return StreamingResponse(
+        stream_story_generation(story_id, "generate_ending", db, node_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get(

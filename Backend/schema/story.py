@@ -141,6 +141,39 @@ class StoryNodeWithChildren(StoryNodeResponse):
     children: list["StoryNodeWithChildren"] = []
 
 
+# ============ Branch Schemas ============
+
+class StoryBranchNode(BaseModel):
+    """A node within a story branch."""
+    id: int
+    content: str
+    choice_text: Optional[str] = None
+    is_ending: bool = False
+
+
+class StoryBranch(BaseModel):
+    """A complete branch/path through the story."""
+    id: str
+    nodes: list[StoryBranchNode]
+    is_complete: bool = False  # True if ends with an ending node
+
+
+class SaveBranchesRequest(BaseModel):
+    """Request to save story branches."""
+    complete_story_text: Optional[str] = Field(None, description="The complete story as continuous text")
+    branches: list[StoryBranch] = Field(default_factory=list, description="All branches through the story")
+
+
+class StoryBranchesResponse(BaseModel):
+    """Response containing story branches."""
+    story_id: int
+    title: str
+    complete_story_text: Optional[str] = None
+    branches: list[StoryBranch] = []
+    total_branches: int = 0
+    has_complete_ending: bool = False
+
+
 class StoryResponse(BaseModel):
     """Schema for story in API responses."""
     
@@ -157,6 +190,9 @@ class StoryResponse(BaseModel):
     is_active: bool
     is_completed: bool
     root_node_id: Optional[int]
+    current_node_id: Optional[int] = None  # Track where user left off
+    complete_story_text: Optional[str] = None
+    story_branches: Optional[list] = None
     created_at: datetime
     updated_at: datetime
 

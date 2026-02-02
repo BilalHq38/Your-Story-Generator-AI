@@ -18,6 +18,11 @@ python-dotenv>=1.0.0
 # HTTP client (for Groq API)
 httpx>=0.26.0
 
+# LangChain with Groq
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-groq>=0.1.0
+
 # Authentication
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4

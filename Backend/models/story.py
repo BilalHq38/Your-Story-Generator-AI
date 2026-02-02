@@ -60,6 +60,15 @@ class Story(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     root_node_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Track the current/last node for resuming the story
+    current_node_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Store the complete story as continuous text (for "Read Full Story" view)
+    complete_story_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Store all branches as JSON array of paths
+    story_branches: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Story context for memory persistence: characters, events, situation summary
+    # Format: {"characters": [...], "key_events": [...], "current_situation": "...", "story_summary": "..."}
+    story_context: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

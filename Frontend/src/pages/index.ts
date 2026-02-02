@@ -1,5 +1,8 @@
 export { default as HomePage } from './HomePage'
 export { default as CreateStoryPage } from './CreateStoryPage'
 export { default as StoryPage } from './StoryPage'
+export { default as StoryReadPage } from './StoryReadPage'
 export { default as LibraryPage } from './LibraryPage'
 export { default as StoryTreePage } from './StoryTreePage'
+export { default as LoginPage } from './LoginPage'
+export { default as SignupPage } from './SignupPage'

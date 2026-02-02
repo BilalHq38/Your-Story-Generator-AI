@@ -16,12 +16,37 @@ class Base(DeclarativeBase):
     pass
 
 
+def get_engine_args():
+    """Get engine arguments based on database type."""
+    # Base settings
+    engine_args = {
+        "echo": settings.db_echo,
+        "pool_pre_ping": True,  # Verify connections before using
+    }
+    
+    # PostgreSQL-specific settings (for Neon, Supabase, etc.)
+    if settings.database_url.startswith("postgresql"):
+        engine_args.update({
+            "pool_size": 5,
+            "max_overflow": 10,
+            "pool_recycle": 300,  # Recycle connections after 5 minutes
+            "pool_timeout": 30,
+            # For serverless (Vercel), use NullPool
+            # "poolclass": NullPool,  # Uncomment for serverless
+        })
+        
+        # SSL is handled via sslmode in connection string for Neon
+    else:
+        # SQLite settings
+        engine_args["pool_recycle"] = 300
+    
+    return engine_args
+
+
 # Create engine with appropriate settings
 engine = create_engine(
     settings.database_url,
-    echo=settings.db_echo,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_recycle=300,    # Recycle connections after 5 minutes
+    **get_engine_args()
 )
 
 # SQLite-specific: Enable foreign keys

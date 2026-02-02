@@ -8,6 +8,7 @@ export interface Story {
   atmosphere: StoryAtmosphere
   language: StoryLanguage
   root_node_id: string | null
+  current_node_id: string | null  // Track where user left off
   is_completed: boolean
   created_at: string
   updated_at: string

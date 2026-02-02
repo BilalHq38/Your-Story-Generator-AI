@@ -43,11 +43,15 @@ class Settings(BaseSettings):
     )
     secret_key: str = Field(default="change-me-in-production", alias="SECRET_KEY")
     
+    # JWT Settings
+    algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    access_token_expire_minutes: int = Field(default=1440, alias="ACCESS_TOKEN_EXPIRE_MINUTES")  # 24 hours
+    
     # External APIs
-    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
-    # Default model; can be overridden via GEMINI_MODEL in Backend/.env
-    gemini_model: str = Field(default="gemini-2.5-flash-lite", alias="GEMINI_MODEL")
+    groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
+    # Default model; can be overridden via GROQ_MODEL in Backend/.env
+    # llama-3.1-8b-instant is fastest for real-time generation
+    groq_model: str = Field(default="llama-3.1-8b-instant", alias="GROQ_MODEL")
     
     # Database
     database_url: str = Field(default="sqlite:///./story_teller.db", alias="DATABASE_URL")
@@ -73,9 +77,10 @@ class Settings(BaseSettings):
             if self.debug:
                 raise ValueError("DEBUG must be False in production")
 
-        # Allow either GEMINI_API_KEY or GOOGLE_API_KEY (some libraries expect GOOGLE_API_KEY)
-        if not self.gemini_api_key and self.google_api_key:
-            self.gemini_api_key = self.google_api_key
+        # Groq API key is required for story generation
+        if not self.groq_api_key:
+            import warnings
+            warnings.warn("GROQ_API_KEY is not set. Story generation will not work.")
         return self
 
     @property

@@ -103,13 +103,15 @@ async def synthesize_speech(
     """
     narrator_str = request.narrator.value.lower() if request.narrator else None
     language_str = request.language.value.lower() if request.language else "english"
+    gender_str = request.gender.value.lower() if request.gender else "female"
     
-    logger.info(f"TTS request: language={language_str}, narrator={narrator_str}, {len(request.text)} chars")
+    logger.info(f"TTS request: language={language_str}, gender={gender_str}, narrator={narrator_str}, {len(request.text)} chars")
     
     try:
         audio_data, content_type = await tts_service.synthesize(
             text=request.text,
             language=language_str,
+            gender=gender_str,
             narrator=narrator_str,
         )
         

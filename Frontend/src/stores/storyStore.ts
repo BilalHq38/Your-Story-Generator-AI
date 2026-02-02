@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import type { Story, StoryNode } from '@/types'
-import { storyApi, jobApi } from '@/api'
+import { storyApi } from '@/api'
 import toast from 'react-hot-toast'
 
 interface StoryStore {
@@ -13,6 +13,7 @@ interface StoryStore {
   isLoading: boolean
   isGenerating: boolean
   generationProgress: string
+  streamingContent: string  // NEW: content being streamed
   error: string | null
 
   // Actions
@@ -34,6 +35,7 @@ const initialState = {
   isLoading: false,
   isGenerating: false,
   generationProgress: '',
+  streamingContent: '',
   error: null,
 }
 
@@ -60,11 +62,19 @@ export const useStoryStore = create<StoryStore>()(
             isLoading: false,
           })
 
-          // If there's a root node, load it
-          if (story.root_node_id) {
-            const rootNode = nodes.find(n => n.id === story.root_node_id)
-            if (rootNode) {
-              set({ currentNode: rootNode, storyPath: [rootNode] })
+          // Resume from current_node_id if available, otherwise use root_node
+          const resumeNodeId = story.current_node_id || story.root_node_id
+          if (resumeNodeId) {
+            const currentNode = nodes.find(n => n.id === resumeNodeId)
+            if (currentNode) {
+              // Get the path from root to current node
+              try {
+                const path = await storyApi.getStoryPath(storyId, String(resumeNodeId))
+                set({ currentNode, storyPath: path })
+              } catch {
+                // If path fails, just set the current node
+                set({ currentNode, storyPath: [currentNode] })
+              }
             }
           }
         } catch (error) {
@@ -97,111 +107,123 @@ export const useStoryStore = create<StoryStore>()(
       },
 
       generateOpening: async (storyId) => {
-        set({ isGenerating: true, generationProgress: 'Starting story generation...', error: null })
+        set({ isGenerating: true, generationProgress: 'Starting story generation...', streamingContent: '', error: null })
+        
         try {
-          const { job_id } = await storyApi.generateOpening(storyId)
-          
-          set({ generationProgress: 'AI is crafting your story...' })
-          
-          const job = await jobApi.pollJob(job_id, (j) => {
-            if (j.status === 'processing') {
-              set({ generationProgress: 'Weaving the narrative...' })
-            }
+          await storyApi.streamOpening(storyId, {
+            onToken: (token) => {
+              set((state) => ({ 
+                streamingContent: state.streamingContent + token,
+                generationProgress: 'Generating your story...',
+              }))
+            },
+            onDone: async (result) => {
+              // Reload the story to get the new node with proper structure
+              await get().loadStory(storyId)
+              set({ streamingContent: '', isGenerating: false, generationProgress: '' })
+              toast.success('Your adventure begins!')
+            },
+            onError: (error) => {
+              set({ error, isGenerating: false, generationProgress: '', streamingContent: '' })
+              toast.error(error)
+            },
           })
-          
-          if (job.result) {
-            // Reload the story to get the new node
-            await get().loadStory(storyId)
-            toast.success('Your adventure begins!')
-          }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to generate opening'
-          set({ error: message })
+          set({ error: message, isGenerating: false, generationProgress: '', streamingContent: '' })
           toast.error(message)
-        } finally {
-          set({ isGenerating: false, generationProgress: '' })
         }
       },
 
       continueStory: async (storyId, nodeId, choiceId, choiceText) => {
-        set({ isGenerating: true, generationProgress: 'Processing your choice...', error: null })
+        set({ isGenerating: true, generationProgress: 'Processing your choice...', streamingContent: '', error: null })
+        
         try {
-          const { job_id } = await storyApi.continueStory(storyId, nodeId, {
+          await storyApi.streamContinuation(storyId, nodeId, {
             choice_id: choiceId,
             choice_text: choiceText,
+          }, {
+            onToken: (token) => {
+              set((state) => ({ 
+                streamingContent: state.streamingContent + token,
+                generationProgress: 'The story unfolds...',
+              }))
+            },
+            onDone: async (result) => {
+              // Reload nodes and navigate to the new node
+              const nodes = await storyApi.getStoryNodes(storyId)
+              const newNode = nodes.find(n => n.id === result.node_id)
+              
+              if (newNode) {
+                const path = await storyApi.getStoryPath(storyId, String(result.node_id))
+                set({ 
+                  allNodes: nodes,
+                  currentNode: newNode, 
+                  storyPath: path,
+                  streamingContent: '',
+                  isGenerating: false,
+                  generationProgress: '',
+                })
+              } else {
+                set({ streamingContent: '', isGenerating: false, generationProgress: '' })
+              }
+            },
+            onError: (error) => {
+              set({ error, isGenerating: false, generationProgress: '', streamingContent: '' })
+              toast.error(error)
+            },
           })
-          
-          set({ generationProgress: 'The story unfolds...' })
-          
-          const job = await jobApi.pollJob(job_id, (j) => {
-            if (j.status === 'processing') {
-              set({ generationProgress: 'Crafting the next chapter...' })
-            }
-          })
-          
-          if (job.result) {
-            // Reload nodes and navigate to the new node
-            const nodes = await storyApi.getStoryNodes(storyId)
-            const newNode = nodes.find(n => n.parent_id === nodeId)
-            
-            if (newNode) {
-              const path = await storyApi.getStoryPath(storyId, newNode.id)
-              set({ 
-                allNodes: nodes,
-                currentNode: newNode, 
-                storyPath: path,
-              })
-            }
-          }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to continue story'
-          set({ error: message })
+          set({ error: message, isGenerating: false, generationProgress: '', streamingContent: '' })
           toast.error(message)
-        } finally {
-          set({ isGenerating: false, generationProgress: '' })
         }
       },
 
       generateEnding: async (storyId, nodeId) => {
-        set({ isGenerating: true, generationProgress: 'Preparing the finale...', error: null })
+        set({ isGenerating: true, generationProgress: 'Preparing the finale...', streamingContent: '', error: null })
+        
         try {
-          const { job_id } = await storyApi.generateEnding(storyId, nodeId)
-          
-          set({ generationProgress: 'Writing the conclusion...' })
-          
-          const job = await jobApi.pollJob(job_id, (j) => {
-            if (j.status === 'processing') {
-              set({ generationProgress: 'The end draws near...' })
-            }
+          await storyApi.streamEnding(storyId, nodeId, {
+            onToken: (token) => {
+              set((state) => ({ 
+                streamingContent: state.streamingContent + token,
+                generationProgress: 'Writing the conclusion...',
+              }))
+            },
+            onDone: async (result) => {
+              // Reload nodes to get the new ending node
+              const nodes = await storyApi.getStoryNodes(storyId)
+              const endingNode = nodes.find(n => n.id === result.node_id)
+              
+              if (endingNode) {
+                const path = await storyApi.getStoryPath(storyId, String(result.node_id))
+                const story = await storyApi.getStory(storyId)
+                set({ 
+                  currentStory: story,
+                  allNodes: nodes,
+                  currentNode: endingNode, 
+                  storyPath: path,
+                  streamingContent: '',
+                  isGenerating: false,
+                  generationProgress: '',
+                })
+              } else {
+                // Fallback to loadStory if ending node not found
+                await get().loadStory(storyId)
+                set({ streamingContent: '', isGenerating: false, generationProgress: '' })
+              }
+              toast.success('The story reaches its conclusion!')
+            },
+            onError: (error) => {
+              set({ error, isGenerating: false, generationProgress: '', streamingContent: '' })
+              toast.error(error)
+            },
           })
-          
-          if (job.result) {
-            // Reload nodes to get the new ending node
-            const nodes = await storyApi.getStoryNodes(storyId)
-            // Find the new ending node (child of current node with is_ending=true)
-            const endingNode = nodes.find(n => n.parent_id === nodeId && n.is_ending)
-            
-            if (endingNode) {
-              const path = await storyApi.getStoryPath(storyId, endingNode.id)
-              const story = await storyApi.getStory(storyId)
-              set({ 
-                currentStory: story,
-                allNodes: nodes,
-                currentNode: endingNode, 
-                storyPath: path,
-              })
-            } else {
-              // Fallback to loadStory if ending node not found
-              await get().loadStory(storyId)
-            }
-            toast.success('The story reaches its conclusion!')
-          }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to generate ending'
-          set({ error: message })
+          set({ error: message, isGenerating: false, generationProgress: '', streamingContent: '' })
           toast.error(message)
-        } finally {
-          set({ isGenerating: false, generationProgress: '' })
         }
       },
 
@@ -217,3 +239,4 @@ export const useCurrentNode = () => useStoryStore((s) => s.currentNode)
 export const useStoryPath = () => useStoryStore((s) => s.storyPath)
 export const useIsGenerating = () => useStoryStore((s) => s.isGenerating)
 export const useGenerationProgress = () => useStoryStore((s) => s.generationProgress)
+export const useStreamingContent = () => useStoryStore((s) => s.streamingContent)

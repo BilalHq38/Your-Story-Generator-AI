@@ -12,7 +12,7 @@ from core.config import settings
 from core.exceptions import register_exception_handlers
 from core.logging import setup_logging
 from db.database import init_db
-from routers import jobs_router, story_router, tts_router
+from routers import auth_router, jobs_router, story_router, tts_router
 
 
 # Configure logging before app starts
@@ -42,6 +42,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         init_db()
         logger.info("Database tables initialized")
     
+    # Pre-warm the story generator for faster first request
+    try:
+        from core.story_generator import get_story_generator
+        get_story_generator()
+        logger.info("Story generator pre-warmed")
+    except Exception as e:
+        logger.warning(f"Could not pre-warm story generator: {e}")
+    
     logger.info("Application startup complete")
     
     yield
@@ -59,7 +67,7 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     lifespan=lifespan,
-    redirect_slashes=False,
+    redirect_slashes=True,
 )
 
 # Register exception handlers
@@ -78,6 +86,7 @@ app.add_middleware(
 
 # ============ Include Routers ============
 
+app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(story_router, prefix=settings.api_prefix)
 app.include_router(tts_router, prefix=settings.api_prefix)
 app.include_router(jobs_router, prefix=settings.api_prefix)

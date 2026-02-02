@@ -1,11 +1,11 @@
 # Story Teller API
 
-An AI-powered "Choose Your Own Adventure" story API built with FastAPI, LangChain, and Google Gemini.
+An AI-powered "Choose Your Own Adventure" story API built with FastAPI, LangChain, and Groq.
 
 ## Features
 
 - 🎭 **Interactive Stories** - Create branching narrative adventures
-- 🤖 **AI-Powered Generation** - Uses Google Gemini to generate story content
+- 🤖 **AI-Powered Generation** - Uses Groq LLM to generate story content
 - 🌳 **Tree Structure** - Stories are organized as navigable decision trees
 - ⚡ **Async Processing** - Background job queue for story generation
 - 📊 **Full CRUD** - Complete API for stories, nodes, and jobs
@@ -17,7 +17,7 @@ An AI-powered "Choose Your Own Adventure" story API built with FastAPI, LangChai
 
 - Python 3.11+
 - PostgreSQL (or SQLite for development)
-- Google Gemini API key
+- Groq API key
 
 ### Installation
 
@@ -82,7 +82,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/storyteller
 # DATABASE_URL=sqlite:///./story_teller.db
 
 # AI
-GEMINI_API_KEY=your-gemini-api-key
+GROQ_API_KEY=your-groq-api-key
 ```
 
 ## API Endpoints

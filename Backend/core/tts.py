@@ -81,15 +81,17 @@ class TTSService:
     
     def list_supported_languages(self) -> list[str]:
         """List all supported languages."""
-        return self._mms_service.list_supported_languages()
+        return self._edge_service.list_supported_languages()
     
     def clear_cache(self):
         """Clear the audio cache."""
-        self._mms_service.clear_cache()
+        # Edge TTS uses file-based caching, nothing to clear programmatically
+        pass
     
     def unload_models(self):
         """Unload all models to free memory."""
-        self._mms_service.unload_models()
+        # Edge TTS is cloud-based, no models to unload
+        pass
 
 
 # Convenience function

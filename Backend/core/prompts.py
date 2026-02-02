@@ -6,7 +6,7 @@ Your writing style should be:
 - Engaging and immersive with vivid descriptions
 - Appropriate for all ages (no explicit content)
 - Written in second person ("You walk into the room...")
-- Each segment should be 150-300 words
+- Each segment should be 300-450 words
 
 You must ALWAYS format your response using these tags:
 [STORY]
@@ -29,7 +29,7 @@ SYSTEM_PROMPT_URDU = """آپ ایک ماہر کہانی کار ہیں جو ای�
 - دلچسپ اور عمیق، واضح تفصیلات کے ساتھ
 - ہر عمر کے لیے مناسب (کوئی نامناسب مواد نہیں)
 - دوسرے شخص میں لکھا گیا ("آپ کمرے میں داخل ہوتے ہیں...")
-- ہر حصہ 150-300 الفاظ کا ہونا چاہیے
+- ہر حصہ 300-450 الفاظ کا ہونا چاہیے
 - خالص اردو میں لکھیں، انگریزی الفاظ سے گریز کریں
 
 آپ کو ہمیشہ اپنا جواب ان ٹیگز میں فارمیٹ کرنا ہوگا:
