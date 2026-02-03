@@ -117,7 +117,7 @@ export const useStoryStore = create<StoryStore>()(
                 generationProgress: 'Generating your story...',
               }))
             },
-            onDone: async (result) => {
+            onDone: async () => {
               // Reload the story to get the new node with proper structure
               await get().loadStory(storyId)
               set({ streamingContent: '', isGenerating: false, generationProgress: '' })
@@ -152,7 +152,7 @@ export const useStoryStore = create<StoryStore>()(
             onDone: async (result) => {
               // Reload nodes and navigate to the new node
               const nodes = await storyApi.getStoryNodes(storyId)
-              const newNode = nodes.find(n => n.id === result.node_id)
+              const newNode = nodes.find(n => n.id === String(result.node_id))
               
               if (newNode) {
                 const path = await storyApi.getStoryPath(storyId, String(result.node_id))
@@ -194,7 +194,7 @@ export const useStoryStore = create<StoryStore>()(
             onDone: async (result) => {
               // Reload nodes to get the new ending node
               const nodes = await storyApi.getStoryNodes(storyId)
-              const endingNode = nodes.find(n => n.id === result.node_id)
+              const endingNode = nodes.find(n => n.id === String(result.node_id))
               
               if (endingNode) {
                 const path = await storyApi.getStoryPath(storyId, String(result.node_id))
