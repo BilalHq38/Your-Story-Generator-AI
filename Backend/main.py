@@ -112,6 +112,13 @@ async def root() -> dict[str, str]:
         "docs": "/docs",
     }
 
+# -------------------------------------------------
+# Public test endpoint (for auth debugging)
+# -------------------------------------------------
+@app.get("/__public_test")
+async def public_test():
+    return {"ok": True}
+
 
 @app.get("/health", tags=["health"])
 async def health_check() -> JSONResponse:
