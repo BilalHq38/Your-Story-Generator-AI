@@ -121,6 +121,84 @@ class StoryGenerator:
                 logger.exception("Failed to initialize Groq LLM")
                 raise
     
+    # -------------------------
+    # Memory management
+    # -------------------------
+    @staticmethod
+    def update_story_memory(
+        content: str,
+        previous_memory: Optional[dict] = None,
+    ) -> dict:
+        """
+        Extract and update story memory from generated content.
+        Lightweight and serverless-safe.
+        """
+        memory = previous_memory or {
+            "characters": [],
+            "key_events": [],
+            "current_situation": "",
+            "story_summary": "",
+        }
+
+        # Extract character names (capitalized words, simple heuristic)
+        names = re.findall(r"\b[A-Z][a-z]{2,}\b", content)
+        for name in names:
+            if name not in memory["characters"] and name not in [
+                'The', 'And', 'But', 'She', 'He', 'They', 'This', 'That', 
+                'With', 'When', 'Where', 'What', 'Who', 'Why', 'How'
+            ]:
+                memory["characters"].append(name)
+
+        memory["characters"] = memory["characters"][-8:]  # Keep last 8 characters
+
+        # Extract key events (last 1-2 meaningful sentences)
+        sentences = re.split(r"[.!?]", content)
+        recent = [s.strip() for s in sentences if s.strip()][-2:]
+        if recent:
+            memory["key_events"].append(recent[-1][:150])  # Limit length
+
+        memory["key_events"] = memory["key_events"][-5:]  # Keep last 5 events
+
+        # Update current situation
+        memory["current_situation"] = recent[-1] if recent else ""
+
+        # Progressive story summary (grows over time)
+        if not memory["story_summary"]:
+            memory["story_summary"] = memory["current_situation"]
+        else:
+            # Append new situation and trim to max length
+            memory["story_summary"] = (
+                memory["story_summary"] + " " + memory["current_situation"]
+            )[-800:]  # Keep last 800 chars
+
+        return memory
+
+    @staticmethod
+    def build_memory_prompt(memory: dict) -> str:
+        """Build a memory context prompt to inject continuity."""
+        if not memory or not any(memory.values()):
+            return ""
+
+        parts = ["STORY MEMORY (MAINTAIN CONSISTENCY):"]
+
+        characters = memory.get("characters", [])
+        if characters:
+            parts.append(f"Characters: {', '.join(characters)}")
+
+        summary = memory.get("story_summary", "")
+        if summary:
+            parts.append(f"Story so far: {summary}")
+
+        situation = memory.get("current_situation", "")
+        if situation:
+            parts.append(f"Current situation: {situation}")
+
+        if len(parts) > 1:  # Has actual content
+            parts.append("Rules: Keep characters consistent, continue the same storyline.")
+            return "\n".join(parts) + "\n\n"
+        
+        return ""
+
     def generate_stream(
         self,
         job_type: str,
@@ -147,11 +225,15 @@ class StoryGenerator:
 
         from langchain_core.messages import HumanMessage, SystemMessage
 
+        # Get story memory/context
+        story_memory = getattr(story, 'story_context', None) or {}
+
         system_prompt = self._build_system_prompt(
             story.narrator_persona,
             story.atmosphere,
             story.genre,
             story.language,
+            memory=story_memory,
         )
 
         user_prompt = self._build_user_prompt(
@@ -212,11 +294,15 @@ class StoryGenerator:
 
         from langchain_core.messages import HumanMessage, SystemMessage
 
+        # Get story memory/context
+        story_memory = getattr(story, 'story_context', None) or {}
+
         system_prompt = self._build_system_prompt(
             story.narrator_persona,
             story.atmosphere,
             story.genre,
             story.language,
+            memory=story_memory,
         )
 
         user_prompt = self._build_user_prompt(
@@ -243,8 +329,18 @@ class StoryGenerator:
             logger.exception("Story generation failed")
             raise
     
-    def _build_system_prompt(self, narrator: str, atmosphere: str, genre: str, language: str = "english") -> str:
-        """Build the system prompt based on narrator, atmosphere, and language."""
+    def _build_system_prompt(
+        self, 
+        narrator: str, 
+        atmosphere: str, 
+        genre: str, 
+        language: str = "english",
+        memory: Optional[dict] = None,
+    ) -> str:
+        """Build the system prompt based on narrator, atmosphere, language, and memory."""
+        # Build memory context if available
+        memory_prompt = self.build_memory_prompt(memory or {})
+        
         narrator_prompt = NARRATOR_PROMPTS.get(narrator, NARRATOR_PROMPTS["mysterious"])
         atmosphere_prompt = ATMOSPHERE_PROMPTS.get(atmosphere, ATMOSPHERE_PROMPTS["magical"])
         
@@ -252,7 +348,7 @@ class StoryGenerator:
             narrator_prompt_urdu = NARRATOR_PROMPTS_URDU.get(narrator, NARRATOR_PROMPTS_URDU["mysterious"])
             atmosphere_prompt_urdu = ATMOSPHERE_PROMPTS_URDU.get(atmosphere, ATMOSPHERE_PROMPTS_URDU["magical"])
             
-            return f"""{narrator_prompt_urdu}
+            return f"""{memory_prompt}{narrator_prompt_urdu}
 
 {atmosphere_prompt_urdu}
 
@@ -276,7 +372,7 @@ class StoryGenerator:
 
 [ENDING]false[/ENDING]"""
         
-        return f"""{narrator_prompt}
+        return f"""{memory_prompt}{narrator_prompt}
 
 {atmosphere_prompt}
 

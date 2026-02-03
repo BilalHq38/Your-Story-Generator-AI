@@ -1,17 +1,21 @@
-"""Pydantic schemas for Story API requests and responses."""
+"""
+Pydantic schemas for Story API requests and responses.
+Production-safe for FastAPI + Pydantic v2.
+"""
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Optional, Generic, TypeVar, List, Dict
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-# ============ Enums ============
+# =====================================================
+# Enums (must mirror DB enums)
+# =====================================================
 
 class NarratorPersona(str, Enum):
-    """Available narrator personas for storytelling."""
     MYSTERIOUS = "mysterious"
     EPIC = "epic"
     HORROR = "horror"
@@ -20,7 +24,6 @@ class NarratorPersona(str, Enum):
 
 
 class StoryAtmosphere(str, Enum):
-    """Story atmosphere/mood settings."""
     DARK = "dark"
     MAGICAL = "magical"
     PEACEFUL = "peaceful"
@@ -29,73 +32,82 @@ class StoryAtmosphere(str, Enum):
 
 
 class StoryLanguage(str, Enum):
-    """Supported story languages."""
     ENGLISH = "english"
     URDU = "urdu"
 
 
-# ============ Choice Schema ============
+# =====================================================
+# Story Memory Schema
+# =====================================================
+
+class StoryMemory(BaseModel):
+    """Schema for story memory/context to maintain continuity."""
+    characters: List[str] = Field(default_factory=list, description="Main character names")
+    key_events: List[str] = Field(default_factory=list, description="Important story events")
+    current_situation: str = Field(default="", description="Current scene/situation")
+    story_summary: str = Field(default="", description="Progressive story summary")
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "characters": ["Alice", "Bob"],
+                "key_events": ["Found the ancient key", "Entered the dark forest"],
+                "current_situation": "They stand before the locked door",
+                "story_summary": "Two adventurers discovered a mysterious key and journeyed through a dark forest."
+            }
+        }
+    )
+
+
+# =====================================================
+# Choice
+# =====================================================
 
 class StoryChoice(BaseModel):
-    """A choice available to the reader."""
     id: str = Field(default_factory=lambda: str(uuid4())[:8])
     text: str = Field(..., min_length=1, max_length=300)
     consequence_hint: Optional[str] = Field(None, max_length=200)
 
 
-# ============ Base Schemas ============
+# =====================================================
+# Base schemas
+# =====================================================
 
 class StoryNodeBase(BaseModel):
-    """Base schema for story node data."""
-    
     content: str = Field(..., min_length=1, max_length=15000)
     choice_text: Optional[str] = Field(None, max_length=300)
-    choices: Optional[list[StoryChoice]] = Field(default_factory=list)
-    node_metadata: Optional[dict] = None
+    choices: Optional[List[StoryChoice]] = None
+    node_metadata: Optional[Dict] = None
 
 
 class StoryBase(BaseModel):
-    """Base schema for story data."""
-    
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=2000)
     genre: str = Field(default="Fantasy", max_length=50)
-    narrator_persona: NarratorPersona = Field(default=NarratorPersona.MYSTERIOUS)
-    atmosphere: StoryAtmosphere = Field(default=StoryAtmosphere.MAGICAL)
-    language: StoryLanguage = Field(default=StoryLanguage.ENGLISH)
+    narrator_persona: NarratorPersona = NarratorPersona.MYSTERIOUS
+    atmosphere: StoryAtmosphere = StoryAtmosphere.MAGICAL
+    language: StoryLanguage = StoryLanguage.ENGLISH
 
 
-# ============ Create Schemas ============
+# =====================================================
+# Create / Update
+# =====================================================
 
 class StoryCreate(StoryBase):
-    """Schema for creating a new story."""
-    
-    initial_prompt: Optional[str] = Field(
-        None,
-        max_length=2000,
-        description="Optional prompt to generate the story's first node"
-    )
+    initial_prompt: Optional[str] = Field(None, max_length=2000)
 
 
 class StoryNodeCreate(StoryNodeBase):
-    """Schema for creating a new story node."""
-    
     parent_id: Optional[int] = Field(None, ge=1)
     is_ending: bool = False
 
 
 class ContinueStoryRequest(BaseModel):
-    """Schema for continuing the story with a choice."""
-    
-    choice_id: str = Field(..., description="ID of the selected choice")
+    choice_id: str
     choice_text: str = Field(..., min_length=1, max_length=300)
 
 
-# ============ Update Schemas ============
-
 class StoryUpdate(BaseModel):
-    """Schema for updating a story."""
-    
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=2000)
     genre: Optional[str] = Field(None, max_length=50)
@@ -107,28 +119,26 @@ class StoryUpdate(BaseModel):
 
 
 class StoryNodeUpdate(BaseModel):
-    """Schema for updating a story node."""
-    
     content: Optional[str] = Field(None, min_length=1, max_length=15000)
-    choices: Optional[list[StoryChoice]] = None
-    node_metadata: Optional[dict] = None
+    choices: Optional[List[StoryChoice]] = None
+    node_metadata: Optional[Dict] = None
     is_ending: Optional[bool] = None
 
 
-# ============ Response Schemas ============
+# =====================================================
+# Responses
+# =====================================================
 
 class StoryNodeResponse(BaseModel):
-    """Schema for story node in API responses."""
-    
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: int
     story_id: int
     parent_id: Optional[int]
     content: str
     choice_text: Optional[str]
-    choices: list[StoryChoice] = []
-    node_metadata: Optional[dict] = None
+    choices: Optional[List[StoryChoice]]
+    node_metadata: Optional[Dict]
     is_root: bool
     is_ending: bool
     depth: int
@@ -136,86 +146,78 @@ class StoryNodeResponse(BaseModel):
 
 
 class StoryNodeWithChildren(StoryNodeResponse):
-    """Story node with its child nodes."""
-    
-    children: list["StoryNodeWithChildren"] = []
-
-
-# ============ Branch Schemas ============
-
-class StoryBranchNode(BaseModel):
-    """A node within a story branch."""
-    id: int
-    content: str
-    choice_text: Optional[str] = None
-    is_ending: bool = False
-
-
-class StoryBranch(BaseModel):
-    """A complete branch/path through the story."""
-    id: str
-    nodes: list[StoryBranchNode]
-    is_complete: bool = False  # True if ends with an ending node
-
-
-class SaveBranchesRequest(BaseModel):
-    """Request to save story branches."""
-    complete_story_text: Optional[str] = Field(None, description="The complete story as continuous text")
-    branches: list[StoryBranch] = Field(default_factory=list, description="All branches through the story")
-
-
-class StoryBranchesResponse(BaseModel):
-    """Response containing story branches."""
-    story_id: int
-    title: str
-    complete_story_text: Optional[str] = None
-    branches: list[StoryBranch] = []
-    total_branches: int = 0
-    has_complete_ending: bool = False
+    children: List["StoryNodeWithChildren"] = Field(default_factory=list)
 
 
 class StoryResponse(BaseModel):
-    """Schema for story in API responses."""
-    
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: int
     title: str
     description: Optional[str]
     genre: Optional[str]
-    narrator_persona: str
-    atmosphere: str
-    language: str = "english"
+    narrator_persona: NarratorPersona
+    atmosphere: StoryAtmosphere
+    language: StoryLanguage
     session_id: str
     is_active: bool
     is_completed: bool
     root_node_id: Optional[int]
-    current_node_id: Optional[int] = None  # Track where user left off
-    complete_story_text: Optional[str] = None
-    story_branches: Optional[list] = None
+    current_node_id: Optional[int]
+    complete_story_text: Optional[str]
+    story_branches: Optional[List]
     created_at: datetime
     updated_at: datetime
 
 
 class StoryWithNodes(StoryResponse):
-    """Story with all its nodes."""
-    
-    nodes: list[StoryNodeResponse] = []
+    nodes: List[StoryNodeResponse] = Field(default_factory=list)
 
 
 class StoryDetail(StoryResponse):
-    """Story with root node and tree structure."""
-    
     root_node: Optional[StoryNodeWithChildren] = None
     node_count: int = 0
 
 
-# ============ List/Pagination Schemas ============
+# =====================================================
+# Branches
+# =====================================================
 
-class PaginatedResponse(BaseModel):
-    """Generic paginated response."""
-    
-    items: list
+class StoryBranchNode(BaseModel):
+    id: int
+    content: str
+    choice_text: Optional[str]
+    is_ending: bool = False
+
+
+class StoryBranch(BaseModel):
+    id: str
+    nodes: List[StoryBranchNode]
+    is_complete: bool = False
+
+
+class SaveBranchesRequest(BaseModel):
+    complete_story_text: Optional[str]
+    branches: List[StoryBranch] = Field(default_factory=list)
+
+
+class StoryBranchesResponse(BaseModel):
+    story_id: int
+    title: str
+    complete_story_text: Optional[str]
+    branches: List[StoryBranch] = Field(default_factory=list)
+    total_branches: int = 0
+    has_complete_ending: bool = False
+
+
+# =====================================================
+# Pagination (generic)
+# =====================================================
+
+T = TypeVar("T")
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: List[T]
     total: int
     page: int
     size: int
@@ -223,34 +225,28 @@ class PaginatedResponse(BaseModel):
     total_pages: int
 
 
-class StoryListResponse(BaseModel):
-    """Paginated list of stories."""
-    
-    items: list[StoryResponse]
-    total: int
-    page: int = 1
-    size: int = 20
-    pages: int = 1
-    total_pages: int = 1
+class StoryListResponse(PaginatedResponse[StoryResponse]):
+    pass
 
 
-# ============ Job Response Schemas ============
+# =====================================================
+# Jobs
+# =====================================================
 
 class JobStartResponse(BaseModel):
-    """Response when starting an async job."""
     job_id: int
 
 
-# ============ TTS (Text-to-Speech) Schemas ============
+# =====================================================
+# TTS
+# =====================================================
 
 class VoiceGender(str, Enum):
-    """Voice gender options."""
     MALE = "male"
     FEMALE = "female"
 
 
 class VoiceInfo(BaseModel):
-    """Information about an available voice."""
     id: str
     name: str
     locale: str
@@ -259,7 +255,6 @@ class VoiceInfo(BaseModel):
 
 
 class NarratorVoiceProfile(BaseModel):
-    """Voice profile settings for a narrator persona."""
     narrator: NarratorPersona
     voice: str
     rate: str
@@ -268,24 +263,25 @@ class NarratorVoiceProfile(BaseModel):
 
 
 class TTSRequest(BaseModel):
-    """Request to generate speech from text."""
-    text: str = Field(..., min_length=1, max_length=20000, description="Text to convert to speech")
-    voice: Optional[str] = Field(None, description="Specific voice ID (overrides narrator default)")
-    gender: VoiceGender = Field(default=VoiceGender.FEMALE, description="Voice gender preference")
-    narrator: Optional[NarratorPersona] = Field(None, description="Narrator persona to match voice style")
-    rate: Optional[str] = Field(None, description="Speech rate adjustment (-50% to +100%), uses narrator default if not set")
-    pitch: Optional[str] = Field(None, description="Pitch adjustment (-50Hz to +50Hz), uses narrator default if not set")
-    language: StoryLanguage = Field(default=StoryLanguage.ENGLISH, description="Language for voice selection")
+    text: str = Field(..., min_length=1, max_length=20000)
+    voice: Optional[str] = None
+    gender: VoiceGender = VoiceGender.FEMALE
+    narrator: Optional[NarratorPersona] = None
+    rate: Optional[str] = None
+    pitch: Optional[str] = None
+    language: StoryLanguage = StoryLanguage.ENGLISH
 
 
 class TTSVoicesResponse(BaseModel):
-    """Response containing available voices."""
-    male_voices: list[VoiceInfo]
-    female_voices: list[VoiceInfo]
+    male_voices: List[VoiceInfo]
+    female_voices: List[VoiceInfo]
     default_male: str
     default_female: str
 
 
 class NarratorVoiceProfilesResponse(BaseModel):
-    """Response containing voice profiles for all narrators."""
-    profiles: dict[str, NarratorVoiceProfile]
+    profiles: Dict[str, NarratorVoiceProfile]
+
+
+# Required for recursive models (Pydantic v2)
+StoryNodeWithChildren.model_rebuild()

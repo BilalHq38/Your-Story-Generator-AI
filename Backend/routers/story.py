@@ -1064,9 +1064,9 @@ async def stream_story_generation(
                 story.is_completed = True
             story.current_node_id = node.id
             
-            # Extract and update story context for memory persistence
+            # Extract and update story context/memory for continuity
             existing_context = story.story_context or {}
-            updated_context = generator.extract_context_updates(
+            updated_context = generator.update_story_memory(
                 final_result["content"], 
                 existing_context
             )
