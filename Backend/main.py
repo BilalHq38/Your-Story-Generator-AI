@@ -12,7 +12,10 @@ from core.config import settings
 from core.exceptions import register_exception_handlers
 from core.logging import setup_logging
 from db.database import init_db, SessionLocal
-from routers import auth_router, jobs_router, story_router, tts_router
+from routers.auth import router as auth_router
+from routers.story import router as story_router
+from routers.jobs import router as jobs_router
+from routers.tts import router as tts_router
 
 
 # -------------------------------------------------
