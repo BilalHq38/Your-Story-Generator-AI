@@ -1,9 +1,37 @@
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { BookOpen, Sparkles, TreePine, Mail, Linkedin, Github, Heart, Zap, Globe } from 'lucide-react'
+import { BookOpen, Sparkles, TreePine, Mail, Linkedin, Github, Heart, Zap, Globe, Menu, X } from 'lucide-react'
 import { Button } from '@/components/ui'
 
 export default function LandingPage() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  // Close mobile menu with Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mobileMenuOpen) {
+        setMobileMenuOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [mobileMenuOpen])
+
+  // Smooth scroll to section
+  const scrollToSection = (sectionId: string) => {
+    setMobileMenuOpen(false)
+    const element = document.getElementById(sectionId)
+    if (element) {
+      const offset = 80 // Account for fixed navbar
+      const elementPosition = element.getBoundingClientRect().top + window.pageYOffset
+      window.scrollTo({
+        top: elementPosition - offset,
+        behavior: 'smooth'
+      })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-story-bg via-story-muted to-story-bg">
       {/* Navigation */}
@@ -19,14 +47,30 @@ export default function LandingPage() {
               <span className="text-xl font-bold text-white">Story Generator AI</span>
             </motion.div>
             
+            {/* Desktop Navigation */}
             <motion.div 
-              className="flex items-center gap-4"
+              className="hidden md:flex items-center gap-4"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
             >
-              <a href="#about" className="text-gray-300 hover:text-white transition-colors">About</a>
-              <a href="#features" className="text-gray-300 hover:text-white transition-colors">Features</a>
-              <a href="#contact" className="text-gray-300 hover:text-white transition-colors">Contact</a>
+              <button 
+                onClick={() => scrollToSection('about')} 
+                className="text-gray-300 hover:text-white transition-colors"
+              >
+                About
+              </button>
+              <button 
+                onClick={() => scrollToSection('features')} 
+                className="text-gray-300 hover:text-white transition-colors"
+              >
+                Features
+              </button>
+              <button 
+                onClick={() => scrollToSection('contact')} 
+                className="text-gray-300 hover:text-white transition-colors"
+              >
+                Contact
+              </button>
               <Link to="/login">
                 <Button variant="secondary" size="sm">Login</Button>
               </Link>
@@ -34,7 +78,56 @@ export default function LandingPage() {
                 <Button size="sm">Get Started</Button>
               </Link>
             </motion.div>
+
+            {/* Mobile Menu Button */}
+            <motion.button
+              className="md:hidden text-white p-2"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </motion.button>
           </div>
+
+          {/* Mobile Menu */}
+          {mobileMenuOpen && (
+            <motion.div
+              className="md:hidden py-4 border-t border-story-border"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+            >
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => scrollToSection('about')} 
+                  className="text-gray-300 hover:text-white transition-colors text-left py-2"
+                >
+                  About
+                </button>
+                <button 
+                  onClick={() => scrollToSection('features')} 
+                  className="text-gray-300 hover:text-white transition-colors text-left py-2"
+                >
+                  Features
+                </button>
+                <button 
+                  onClick={() => scrollToSection('contact')} 
+                  className="text-gray-300 hover:text-white transition-colors text-left py-2"
+                >
+                  Contact
+                </button>
+                <div className="flex flex-col gap-2 pt-2">
+                  <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="secondary" size="sm" className="w-full">Login</Button>
+                  </Link>
+                  <Link to="/signup" onClick={() => setMobileMenuOpen(false)}>
+                    <Button size="sm" className="w-full">Get Started</Button>
+                  </Link>
+                </div>
+              </div>
+            </motion.div>
+          )}
         </div>
       </nav>
 
@@ -103,13 +196,14 @@ export default function LandingPage() {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-20 px-4 sm:px-6 lg:px-8">
+      <section id="features" className="py-20 px-4 sm:px-6 lg:px-8 scroll-mt-20">
         <div className="max-w-7xl mx-auto">
           <motion.div 
             className="text-center mb-16"
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
           >
             <h2 className="text-4xl font-bold text-white mb-4">Powerful Features</h2>
             <p className="text-xl text-gray-400">Everything you need to create immersive interactive stories</p>
@@ -154,7 +248,7 @@ export default function LandingPage() {
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
+                transition={{ delay: index * 0.1, duration: 0.5 }}
               >
                 <feature.icon className="w-10 h-10 text-story-accent mb-4" />
                 <h3 className="text-xl font-semibold text-white mb-2">{feature.title}</h3>
@@ -166,13 +260,14 @@ export default function LandingPage() {
       </section>
 
       {/* About Section */}
-      <section id="about" className="py-20 px-4 sm:px-6 lg:px-8 bg-story-muted/30">
+      <section id="about" className="py-20 px-4 sm:px-6 lg:px-8 bg-story-muted/30 scroll-mt-20">
         <div className="max-w-4xl mx-auto">
           <motion.div
             className="text-center"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
           >
             <h2 className="text-4xl font-bold text-white mb-6">About Story Generator AI</h2>
             <p className="text-lg text-gray-300 mb-6 leading-relaxed">
@@ -190,13 +285,14 @@ export default function LandingPage() {
       </section>
 
       {/* Contact Section */}
-      <section id="contact" className="py-20 px-4 sm:px-6 lg:px-8">
+      <section id="contact" className="py-20 px-4 sm:px-6 lg:px-8 scroll-mt-20">
         <div className="max-w-4xl mx-auto">
           <motion.div
             className="text-center"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
           >
             <h2 className="text-4xl font-bold text-white mb-6">Get In Touch</h2>
             <p className="text-lg text-gray-300 mb-10">
