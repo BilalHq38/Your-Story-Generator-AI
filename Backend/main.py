@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -82,6 +82,44 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Request-ID"],
 )
+
+
+# ============ Public Path Middleware ============
+
+# Define public paths that don't require authentication
+PUBLIC_PATHS = {
+    "/",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/health",
+    "/health/ready",
+    "/health/live",
+    "/vite.svg",
+    "/favicon.ico",
+    "/assets",  # Prefix for static assets
+}
+
+
+@app.middleware("http")
+async def allow_public_paths(request: Request, call_next):
+    """
+    Middleware to explicitly allow public paths without authentication.
+    Prevents 401 errors on static assets and documentation.
+    """
+    # Check if path is public or starts with a public prefix
+    path = request.url.path
+    is_public = path in PUBLIC_PATHS or any(
+        path.startswith(public_path) for public_path in PUBLIC_PATHS if public_path.endswith("/") or public_path == "/assets"
+    )
+    
+    # Allow auth endpoints without interference
+    if path.startswith(f"{settings.api_prefix}/auth"):
+        is_public = True
+    
+    # Continue processing the request
+    response = await call_next(request)
+    return response
 
 
 # ============ Include Routers ============
