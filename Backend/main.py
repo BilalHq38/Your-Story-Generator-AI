@@ -4,18 +4,20 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from core.config import settings
 from core.exceptions import register_exception_handlers
 from core.logging import setup_logging
-from db.database import init_db
+from db.database import init_db, SessionLocal
 from routers import auth_router, jobs_router, story_router, tts_router
 
 
-# Configure logging before app starts
+# -------------------------------------------------
+# Logging
+# -------------------------------------------------
 setup_logging(
     level=settings.log_level,
     format_style="detailed" if settings.is_development else "json",
@@ -24,41 +26,46 @@ setup_logging(
 logger = logging.getLogger(__name__)
 
 
+# -------------------------------------------------
+# Lifespan
+# -------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Application lifespan handler.
-    
-    Startup: Initialize database, warm up connections
-    Shutdown: Clean up resources
+
+    Startup:
+    - Log environment
+    - Initialize SQLite DB in development only
+
+    Shutdown:
+    - Cleanup (if needed)
     """
-    # Startup
     logger.info(f"Starting {settings.api_title} v{settings.api_version}")
     logger.info(f"Environment: {settings.environment}")
-    
-    if settings.is_development:
-        # Only auto-create tables in development
-        # Production should use Alembic migrations
+
+    # Auto-create tables ONLY for SQLite in development
+    if settings.is_development and settings.database_url.startswith("sqlite"):
         init_db()
-        logger.info("Database tables initialized")
-    
-    # Pre-warm the story generator for faster first request
-    try:
-        from core.story_generator import get_story_generator
-        get_story_generator()
-        logger.info("Story generator pre-warmed")
-    except Exception as e:
-        logger.warning(f"Could not pre-warm story generator: {e}")
-    
+        logger.info("Database tables initialized (SQLite)")
+
+    # Pre-warm story generator only in development
+    if settings.is_development:
+        try:
+            from core.story_generator import get_story_generator
+            get_story_generator()
+            logger.info("Story generator pre-warmed")
+        except Exception as e:
+            logger.warning(f"Could not pre-warm story generator: {e}")
+
     logger.info("Application startup complete")
-    
     yield
-    
-    # Shutdown
     logger.info("Application shutting down...")
 
 
-# Create FastAPI application
+# -------------------------------------------------
+# App
+# -------------------------------------------------
 app = FastAPI(
     title=settings.api_title,
     description="An API for creating and managing choose-your-own-adventure stories powered by AI.",
@@ -70,10 +77,16 @@ app = FastAPI(
     redirect_slashes=True,
 )
 
-# Register exception handlers
+
+# -------------------------------------------------
+# Exception handlers
+# -------------------------------------------------
 register_exception_handlers(app)
 
-# Configure CORS
+
+# -------------------------------------------------
+# CORS
+# -------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_allowed_origins(),
@@ -84,58 +97,20 @@ app.add_middleware(
 )
 
 
-# ============ Public Path Middleware ============
-
-# Define public paths that don't require authentication
-PUBLIC_PATHS = {
-    "/",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
-    "/health",
-    "/health/ready",
-    "/health/live",
-    "/vite.svg",
-    "/favicon.ico",
-    "/assets",  # Prefix for static assets
-}
-
-
-@app.middleware("http")
-async def allow_public_paths(request: Request, call_next):
-    """
-    Middleware to explicitly allow public paths without authentication.
-    Prevents 401 errors on static assets and documentation.
-    """
-    # Check if path is public or starts with a public prefix
-    path = request.url.path
-    is_public = path in PUBLIC_PATHS or any(
-        path.startswith(public_path) for public_path in PUBLIC_PATHS if public_path.endswith("/") or public_path == "/assets"
-    )
-    
-    # Allow auth endpoints without interference
-    if path.startswith(f"{settings.api_prefix}/auth"):
-        is_public = True
-    
-    # Continue processing the request
-    response = await call_next(request)
-    return response
-
-
-# ============ Include Routers ============
-
+# -------------------------------------------------
+# Routers
+# -------------------------------------------------
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(story_router, prefix=settings.api_prefix)
 app.include_router(tts_router, prefix=settings.api_prefix)
 app.include_router(jobs_router, prefix=settings.api_prefix)
 
 
-# ============ Health & Root Endpoints ============
-
-
+# -------------------------------------------------
+# Root & Health
+# -------------------------------------------------
 @app.get("/", include_in_schema=False)
 async def root() -> dict[str, str]:
-    """Root endpoint - API information."""
     return {
         "name": settings.api_title,
         "version": settings.api_version,
@@ -143,23 +118,11 @@ async def root() -> dict[str, str]:
     }
 
 
-@app.get(
-    "/health",
-    tags=["health"],
-    summary="Health check",
-    response_model=dict,
-)
+@app.get("/health", tags=["health"])
 async def health_check() -> JSONResponse:
-    """
-    Health check endpoint for load balancers and monitoring.
-    
-    Returns:
-        Health status and basic info
-    """
+    """Health check for database connectivity."""
     from sqlalchemy import text
-    from db.database import SessionLocal
-    
-    # Check database connectivity
+
     db_healthy = True
     try:
         with SessionLocal() as db:
@@ -167,9 +130,11 @@ async def health_check() -> JSONResponse:
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         db_healthy = False
-    
-    status_code = status.HTTP_200_OK if db_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
-    
+
+    status_code = (
+        status.HTTP_200_OK if db_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
+    )
+
     return JSONResponse(
         status_code=status_code,
         content={
@@ -181,31 +146,22 @@ async def health_check() -> JSONResponse:
     )
 
 
-@app.get(
-    "/health/ready",
-    tags=["health"],
-    summary="Readiness check",
-)
+@app.get("/health/ready", tags=["health"])
 async def readiness_check() -> dict[str, str]:
-    """Readiness probe - returns 200 when app is ready to serve traffic."""
     return {"status": "ready"}
 
 
-@app.get(
-    "/health/live",
-    tags=["health"],
-    summary="Liveness check",
-)
+@app.get("/health/live", tags=["health"])
 async def liveness_check() -> dict[str, str]:
-    """Liveness probe - returns 200 when app is alive."""
     return {"status": "alive"}
 
 
-# ============ Run with Uvicorn ============
-
+# -------------------------------------------------
+# Local run
+# -------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

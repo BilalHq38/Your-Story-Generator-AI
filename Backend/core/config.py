@@ -3,6 +3,7 @@ Application configuration using Pydantic v2 settings.
 Production-safe for Vercel.
 """
 
+import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, List
@@ -52,8 +53,8 @@ class Settings(BaseSettings):
     # -------------------------
     # CORS
     # -------------------------
-    allowed_origins: List[str] = Field(
-        default_factory=lambda: ["http://localhost:3000"],
+    allowed_origins: str = Field(
+        default="http://localhost:3000",
         alias="ALLOWED_ORIGINS",
     )
 
@@ -83,10 +84,14 @@ class Settings(BaseSettings):
     # -------------------------
     @field_validator("allowed_origins", mode="before")
     @classmethod
-    def parse_origins(cls, v):
-        if isinstance(v, str):
-            return [o.strip() for o in v.split(",") if o.strip()]
-        return v
+    def normalize_allowed_origins(cls, v):
+        if v is None:
+            return ""
+
+        if isinstance(v, list):
+            return ",".join(v)
+
+        return str(v)
 
     @model_validator(mode="after")
     def validate_production(self) -> "Settings":
@@ -106,6 +111,26 @@ class Settings(BaseSettings):
     # -------------------------
     # Helpers
     # -------------------------
+    def get_allowed_origins(self) -> List[str]:
+        """
+        Return allowed origins as a list for FastAPI CORS.
+        Supports:
+        - JSON array
+        - comma-separated string
+        - single string
+        """
+        raw = self.allowed_origins.strip()
+
+        if not raw:
+            return []
+
+        # JSON list
+        if raw.startswith("["):
+            return json.loads(raw)
+
+        # Comma-separated
+        return [o.strip() for o in raw.split(",") if o.strip()]
+
     @property
     def is_development(self) -> bool:
         return self.environment == "development"
