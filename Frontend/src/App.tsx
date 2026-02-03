@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { Toaster } from 'react-hot-toast'
+import LandingPage from './pages/LandingPage'
 import HomePage from './pages/HomePage'
 import StoryPage from './pages/StoryPage'
 import StoryReadPage from './pages/StoryReadPage'
@@ -30,12 +31,15 @@ function App() {
         />
         <AnimatePresence mode="wait">
           <Routes>
+            {/* Public landing page */}
+            <Route path="/" element={<LandingPage />} />
+            
             {/* Auth routes - no layout */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
             
             {/* Protected routes with layout */}
-            <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route index element={<HomePage />} />
               <Route path="create" element={<CreateStoryPage />} />
               <Route path="library" element={<LibraryPage />} />

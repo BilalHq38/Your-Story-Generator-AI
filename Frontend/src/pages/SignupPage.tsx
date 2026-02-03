@@ -57,7 +57,7 @@ export default function SignupPage() {
       })
       setAuth(response.user, response.access_token)
       toast.success('Account created successfully!')
-      navigate('/', { replace: true })
+      navigate('/app', { replace: true })
     } catch (error: any) {
       const message = error.response?.data?.detail || 'Registration failed'
       toast.error(message)

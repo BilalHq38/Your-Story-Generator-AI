@@ -64,7 +64,7 @@ export default function StoryPage() {
         <Card className="text-center py-12 px-8">
           <h2 className="text-xl font-semibold text-white mb-4">Story Not Found</h2>
           <p className="text-gray-400 mb-6">This story doesn't exist or has been deleted.</p>
-          <Button onClick={() => navigate('/')}>Go Home</Button>
+          <Button onClick={() => navigate('/app')}>Go Home</Button>
         </Card>
       </div>
     )
@@ -86,7 +86,7 @@ export default function StoryPage() {
           >
             <div className="flex items-center justify-between mb-4">
               <button
-                onClick={() => navigate('/library')}
+                onClick={() => navigate('/app/library')}
                 className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -273,7 +273,7 @@ export default function StoryPage() {
                       >
                         Start Over
                       </Button>
-                      <Link to="/create">
+                      <Link to="/app/create">
                         <Button>New Story</Button>
                       </Link>
                     </div>
@@ -286,7 +286,7 @@ export default function StoryPage() {
               <p className="text-gray-400 mb-6">
                 This story hasn't been started yet.
               </p>
-              <Button onClick={() => navigate('/create')}>
+              <Button onClick={() => navigate('/app/create')}>
                 Create New Story
               </Button>
             </Card>

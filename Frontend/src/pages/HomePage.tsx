@@ -61,12 +61,12 @@ export default function HomePage() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link to="/create">
+              <Link to="/app/create">
                 <Button size="lg" leftIcon={<Wand2 className="w-5 h-5" />}>
                   Create Your Story
                 </Button>
               </Link>
-              <Link to="/library">
+              <Link to="/app/library">
                 <Button variant="secondary" size="lg" leftIcon={<BookOpen className="w-5 h-5" />}>
                   Browse Stories
                 </Button>
@@ -152,7 +152,7 @@ export default function HomePage() {
               <p className="text-gray-500 mb-6">
                 Be the first to create an adventure!
               </p>
-              <Link to="/create">
+              <Link to="/app/create">
                 <Button leftIcon={<Wand2 className="w-4 h-4" />}>
                   Create Story
                 </Button>

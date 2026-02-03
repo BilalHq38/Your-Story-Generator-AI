@@ -54,7 +54,7 @@ export default function CreateStoryPage() {
     },
     onSuccess: (story) => {
       toast.success('Your adventure awaits!')
-      navigate(`/story/${story.id}`)
+      navigate(`/app/story/${story.id}`)
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to create story')

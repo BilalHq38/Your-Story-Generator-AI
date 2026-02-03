@@ -117,7 +117,7 @@ export default function StoryReadPage() {
         <Card className="text-center py-12 px-8">
           <h2 className="text-xl font-semibold text-white mb-4">Story Not Found</h2>
           <p className="text-gray-400 mb-6">This story doesn't exist or has been deleted.</p>
-          <Button onClick={() => navigate('/')}>Go Home</Button>
+          <Button onClick={() => navigate('/app')}>Go Home</Button>
         </Card>
       </div>
     )
@@ -136,7 +136,7 @@ export default function StoryReadPage() {
         >
           <div className="flex items-center justify-between mb-4">
             <button
-              onClick={() => navigate('/library')}
+              onClick={() => navigate('/app/library')}
               className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -317,12 +317,12 @@ export default function StoryReadPage() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
         >
-          <Link to={`/story/${storyId}`}>
+          <Link to={`/app/story/${storyId}`}>
             <Button variant="secondary">
               Read Interactively
             </Button>
           </Link>
-          <Link to="/create">
+          <Link to="/app/create">
             <Button>
               Create New Story
             </Button>

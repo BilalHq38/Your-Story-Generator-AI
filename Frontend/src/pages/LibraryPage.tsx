@@ -71,7 +71,7 @@ export default function LibraryPage() {
                 className="pl-10 pr-4 py-2 rounded-lg bg-story-muted/50 border border-story-border text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-story-accent/50 focus:border-story-accent w-64"
               />
             </div>
-            <Link to="/create">
+            <Link to="/app/create">
               <Button>New Story</Button>
             </Link>
           </div>
@@ -146,7 +146,7 @@ export default function LibraryPage() {
               }
             </p>
             {!searchQuery && (
-              <Link to="/create">
+              <Link to="/app/create">
                 <Button size="lg">Create Your First Story</Button>
               </Link>
             )}

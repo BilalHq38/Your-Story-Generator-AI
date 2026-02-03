@@ -6,9 +6,9 @@ import { authApi } from '@/api/auth'
 import toast from 'react-hot-toast'
 
 const navItems = [
-  { path: '/', label: 'Home', icon: BookOpen },
-  { path: '/create', label: 'New Story', icon: PlusCircle },
-  { path: '/library', label: 'Library', icon: Library },
+  { path: '/app', label: 'Home', icon: BookOpen },
+  { path: '/app/create', label: 'New Story', icon: PlusCircle },
+  { path: '/app/library', label: 'Library', icon: Library },
 ]
 
 export default function Navbar() {

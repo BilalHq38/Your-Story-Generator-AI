@@ -63,7 +63,7 @@ export default function StoryTreePage() {
       <div className="min-h-screen flex items-center justify-center">
         <Card className="text-center py-12 px-8">
           <h2 className="text-xl font-semibold text-white mb-4">Story Not Found</h2>
-          <Button onClick={() => navigate('/')}>Go Home</Button>
+          <Button onClick={() => navigate('/app')}>Go Home</Button>
         </Card>
       </div>
     )
@@ -160,7 +160,7 @@ export default function StoryTreePage() {
         >
           <div className="flex items-center justify-between mb-4">
             <button
-              onClick={() => navigate(`/story/${storyId}`)}
+              onClick={() => navigate(`/app/story/${storyId}`)}
               className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
