@@ -27,36 +27,29 @@ logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------------
-# Lifespan
+# Lifespan (SAFE for serverless)
 # -------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """
-    Application lifespan handler.
-
-    Startup:
-    - Log environment
-    - Initialize SQLite DB in development only
-
-    Shutdown:
-    - Cleanup (if needed)
-    """
     logger.info(f"Starting {settings.api_title} v{settings.api_version}")
     logger.info(f"Environment: {settings.environment}")
 
-    # Auto-create tables ONLY for SQLite in development
+    # Only auto-create tables for SQLite in development
     if settings.is_development and settings.database_url.startswith("sqlite"):
-        init_db()
-        logger.info("Database tables initialized (SQLite)")
+        try:
+            init_db()
+            logger.info("Database tables initialized (SQLite)")
+        except Exception as e:
+            logger.error(f"Database init failed: {e}")
 
-    # Pre-warm story generator only in development
+    # DO NOT pre-warm heavy services in production (serverless)
     if settings.is_development:
         try:
             from core.story_generator import get_story_generator
             get_story_generator()
             logger.info("Story generator pre-warmed")
         except Exception as e:
-            logger.warning(f"Could not pre-warm story generator: {e}")
+            logger.warning(f"Story generator pre-warm skipped: {e}")
 
     logger.info("Application startup complete")
     yield
@@ -68,7 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 # -------------------------------------------------
 app = FastAPI(
     title=settings.api_title,
-    description="An API for creating and managing choose-your-own-adventure stories powered by AI.",
+    description="Choose-your-own-adventure stories powered by AI.",
     version=settings.api_version,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -93,7 +86,6 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID"],
 )
 
 
@@ -120,7 +112,6 @@ async def root() -> dict[str, str]:
 
 @app.get("/health", tags=["health"])
 async def health_check() -> JSONResponse:
-    """Health check for database connectivity."""
     from sqlalchemy import text
 
     db_healthy = True
@@ -131,15 +122,10 @@ async def health_check() -> JSONResponse:
         logger.error(f"Database health check failed: {e}")
         db_healthy = False
 
-    status_code = (
-        status.HTTP_200_OK if db_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
-    )
-
     return JSONResponse(
-        status_code=status_code,
+        status_code=status.HTTP_200_OK if db_healthy else status.HTTP_503_SERVICE_UNAVAILABLE,
         content={
             "status": "healthy" if db_healthy else "unhealthy",
-            "version": settings.api_version,
             "environment": settings.environment,
             "database": "connected" if db_healthy else "disconnected",
         },
@@ -157,7 +143,7 @@ async def liveness_check() -> dict[str, str]:
 
 
 # -------------------------------------------------
-# Local run
+# Local run (ignored by Vercel)
 # -------------------------------------------------
 if __name__ == "__main__":
     import uvicorn

@@ -4,16 +4,22 @@ import logging
 from math import ceil
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 
+from core.auth import get_current_user
 from db.database import DbSession
 from models.job import Job, JobStatus
 from schema.job import JobListResponse, JobResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/jobs", tags=["jobs"])
+# 🔒 PROTECTED - All routes in this router require authentication
+router = APIRouter(
+    prefix="/jobs",
+    tags=["jobs"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get(

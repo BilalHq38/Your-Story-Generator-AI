@@ -1,3 +1,25 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from core.auth import get_current_user
+from db.database import get_db
+from models.user import User
+
+router = APIRouter(
+    prefix="/stories",
+    tags=["stories"],
+    dependencies=[Depends(get_current_user)],  # 🔒 PROTECTED
+)
+
+
+@router.get("/")
+def list_stories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return {
+        "message": f"Hello {current_user.email}, these are your stories"
+    }
 """Story router - CRUD endpoints for stories and story nodes."""
 
 import asyncio
@@ -8,11 +30,12 @@ import secrets
 from math import ceil
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
+from core.auth import get_current_user
 from core.config import settings
 from core.tts import get_tts_service
 from db.database import DbSession
@@ -39,7 +62,12 @@ from schema.story import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/stories", tags=["stories"])
+# 🔒 PROTECTED - All routes in this router require authentication
+router = APIRouter(
+    prefix="/stories",
+    tags=["stories"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 def generate_session_id() -> str:

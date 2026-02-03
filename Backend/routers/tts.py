@@ -1,9 +1,10 @@
 """TTS (Text-to-Speech) router - Endpoints for audio generation."""
 
 import logging
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 
+from core.auth import get_current_user
 from core.tts import get_tts_service, NarratorType
 from ai.edge_tts_service import NARRATOR_SPEED
 from schema.story import (
@@ -14,7 +15,12 @@ from schema.story import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/tts", tags=["text-to-speech"])
+# 🔒 PROTECTED - All routes in this router require authentication
+router = APIRouter(
+    prefix="/tts",
+    tags=["text-to-speech"],
+    dependencies=[Depends(get_current_user)],
+)
 
 # Get the TTS service instance
 tts_service = get_tts_service()
