@@ -7,6 +7,7 @@ import { Button, Card, LoadingSpinner } from '@/components/ui'
 import { StoryCard } from '@/components/story'
 import { storyApi } from '@/api'
 import { Link } from 'react-router-dom'
+import type { Story, PaginatedResponse } from '@/types'
 
 export default function LibraryPage() {
   const queryClient = useQueryClient()
@@ -15,13 +16,12 @@ export default function LibraryPage() {
   const pageSize = 9
 
   // Fetch stories (use caching to reduce repeated loads)
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<PaginatedResponse<Story>>({
     queryKey: ['stories', page, pageSize],
     queryFn: () => storyApi.getStories(page, pageSize),
     placeholderData: (previousData) => previousData,
-    keepPreviousData: true,
     staleTime: 1000 * 30, // 30s
-    cacheTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 5, // 5 minutes
     retry: 1,
   })
 
@@ -38,7 +38,7 @@ export default function LibraryPage() {
   })
 
   // Filter stories by search query
-  const filteredStories = data?.items?.filter(story => 
+  const filteredStories = data?.items?.filter((story: Story) => 
     searchQuery === '' || 
     story.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     story.genre.toLowerCase().includes(searchQuery.toLowerCase())
@@ -90,7 +90,7 @@ export default function LibraryPage() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.1 }}
             >
-              {filteredStories.map((story, index) => (
+              {filteredStories.map((story: Story, index: number) => (
                 <motion.div
                   key={story.id}
                   initial={{ opacity: 0, y: 20 }}
