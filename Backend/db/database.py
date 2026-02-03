@@ -1,4 +1,7 @@
-"""Database configuration and session management."""
+"""
+Database configuration and session management.
+Optimized for FastAPI + Neon + Vercel (serverless).
+"""
 
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -7,6 +10,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from core.config import settings
 
@@ -17,39 +21,40 @@ class Base(DeclarativeBase):
 
 
 def get_engine_args():
-    """Get engine arguments based on database type."""
-    # Base settings
+    """
+    Get SQLAlchemy engine arguments based on environment.
+    
+    IMPORTANT:
+    - Vercel (serverless) MUST use NullPool
+    - Connection pooling breaks auth on serverless
+    """
     engine_args = {
         "echo": settings.db_echo,
-        "pool_pre_ping": True,  # Verify connections before using
+        "pool_pre_ping": True,
     }
-    
-    # PostgreSQL-specific settings (for Neon, Supabase, etc.)
+
+    # PostgreSQL (Neon, Supabase, etc.)
     if settings.database_url.startswith("postgresql"):
         engine_args.update({
-            "pool_size": 5,
-            "max_overflow": 10,
-            "pool_recycle": 300,  # Recycle connections after 5 minutes
-            "pool_timeout": 30,
-            # For serverless (Vercel), use NullPool
-            # "poolclass": NullPool,  # Uncomment for serverless
+            "poolclass": NullPool,  # ✅ REQUIRED for Vercel
         })
-        
-        # SSL is handled via sslmode in connection string for Neon
     else:
-        # SQLite settings
-        engine_args["pool_recycle"] = 300
-    
+        # SQLite (local dev)
+        engine_args.update({
+            "pool_recycle": 300,
+        })
+
     return engine_args
 
 
-# Create engine with appropriate settings
+# Create SQLAlchemy engine
 engine = create_engine(
     settings.database_url,
     **get_engine_args()
 )
 
-# SQLite-specific: Enable foreign keys
+
+# SQLite-specific: enable foreign keys
 if settings.database_url.startswith("sqlite"):
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
@@ -58,15 +63,17 @@ if settings.database_url.startswith("sqlite"):
         cursor.close()
 
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Session factory
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
 
 
 def get_db() -> Generator[Session, None, None]:
     """
     FastAPI dependency that provides a database session.
-    
-    Yields:
-        Session: SQLAlchemy database session
     """
     db = SessionLocal()
     try:
@@ -82,11 +89,7 @@ DbSession = Annotated[Session, Depends(get_db)]
 @contextmanager
 def get_db_context() -> Generator[Session, None, None]:
     """
-    Context manager for database sessions outside of FastAPI requests.
-    
-    Usage:
-        with get_db_context() as db:
-            db.query(...)
+    Context manager for database sessions outside FastAPI requests.
     """
     db = SessionLocal()
     try:
@@ -100,5 +103,9 @@ def get_db_context() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Initialize database tables. Use Alembic for production migrations."""
+    """
+    Initialize database tables.
+    
+    ⚠️ Use Alembic for production migrations.
+    """
     Base.metadata.create_all(bind=engine)

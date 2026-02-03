@@ -1,4 +1,7 @@
-"""Logging configuration for the application."""
+"""
+Logging configuration for the application.
+Optimized for FastAPI + Vercel.
+"""
 
 import logging
 import sys
@@ -8,59 +11,73 @@ from core.config import settings
 
 
 def setup_logging(
-    level: str = "INFO",
-    format_style: Literal["simple", "detailed", "json"] = "detailed",
+    level: str | None = None,
+    format_style: Literal["simple", "detailed", "json"] | None = None,
 ) -> None:
     """
     Configure application logging.
-    
-    Args:
-        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        format_style: Output format style
     """
-    # Clear existing handlers
+
+    # Resolve defaults from settings
+    log_level_name = (level or settings.log_level).upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+
+    # Choose format automatically
+    if format_style is None:
+        format_style = "json" if settings.environment == "production" else "detailed"
+
     root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-    
-    # Set level
-    log_level = getattr(logging, level.upper(), logging.INFO)
     root_logger.setLevel(log_level)
-    
-    # Choose format
+
+    # 🚫 DO NOT clear handlers on Vercel
+    if not root_logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        root_logger.addHandler(handler)
+    else:
+        handler = root_logger.handlers[0]
+
+    # Formatters
     if format_style == "simple":
         formatter = logging.Formatter(
             "%(levelname)s: %(message)s"
         )
+
     elif format_style == "json":
-        # For production with log aggregation
         formatter = logging.Formatter(
-            '{"time": "%(asctime)s", "level": "%(levelname)s", '
-            '"logger": "%(name)s", "message": "%(message)s"}'
+            '{"time":"%(asctime)s",'
+            '"level":"%(levelname)s",'
+            '"logger":"%(name)s",'
+            '"message":"%(message)s"}'
         )
+
     else:  # detailed
         formatter = logging.Formatter(
             "%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
-    
-    # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(log_level)
-    console_handler.setFormatter(formatter)
-    root_logger.addHandler(console_handler)
-    
-    # Suppress noisy loggers
+
+    handler.setFormatter(formatter)
+    handler.setLevel(log_level)
+
+    # Reduce noise
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
-    
-    # SQLAlchemy logging based on config
+
+    # SQLAlchemy logging
     if settings.db_echo:
         logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
     else:
         logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
-    
-    logging.info(f"Logging configured: level={level}, format={format_style}")
+
+    logging.getLogger(__name__).info(
+        "Logging initialized",
+        extra={
+            "level": log_level_name,
+            "format": format_style,
+            "environment": settings.environment,
+        },
+    )
 
 
 def get_logger(name: str) -> logging.Logger:

@@ -1,10 +1,21 @@
-"""Job model for tracking async story generation tasks."""
+"""
+Job model for tracking async story generation tasks.
+Production-safe for FastAPI + Neon + Vercel.
+"""
 
 from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Index,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -14,9 +25,10 @@ if TYPE_CHECKING:
     from models.story import Story
 
 
+# -------------------------
+# Enums
+# -------------------------
 class JobStatus(str, Enum):
-    """Possible states for a generation job."""
-    
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -25,8 +37,6 @@ class JobStatus(str, Enum):
 
 
 class JobType(str, Enum):
-    """Types of generation jobs."""
-    
     STORY_START = "story_start"
     STORY_CONTINUE = "story_continue"
     STORY_BRANCH = "story_branch"
@@ -35,54 +45,105 @@ class JobType(str, Enum):
     GENERATE_ENDING = "generate_ending"
 
 
+# -------------------------
+# Model
+# -------------------------
 class Job(Base):
     """Tracks async story generation tasks."""
-    
-    __tablename__ = "jobs"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    __tablename__ = "jobs"
+    __table_args__ = (
+        Index("ix_jobs_story_id", "story_id"),
+        Index("ix_jobs_status", "status"),
+        Index("ix_jobs_created_at", "created_at"),
+    )
+
+    # Primary key
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    # Relations
     story_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("stories.id", ondelete="CASCADE"), nullable=True
+        Integer,
+        ForeignKey("stories.id", ondelete="CASCADE"),
+        nullable=True,
     )
+
     node_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("story_nodes.id", ondelete="SET NULL"), nullable=True
+        Integer,
+        ForeignKey("story_nodes.id", ondelete="SET NULL"),
+        nullable=True,
     )
-    
-    job_type: Mapped[str] = mapped_column(
-        String(50), default=JobType.GENERATE_OPENING.value
+
+    # Job metadata
+    job_type: Mapped[JobType] = mapped_column(
+        String(50),
+        nullable=False,
+        default=JobType.GENERATE_OPENING,
     )
-    status: Mapped[str] = mapped_column(
-        String(20), default=JobStatus.PENDING.value, index=True
+
+    status: Mapped[JobStatus] = mapped_column(
+        String(20),
+        nullable=False,
+        default=JobStatus.PENDING,
     )
-    
-    # Input/Output
-    result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+
+    # Input / Output
+    result: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True
+    )
+
+    error_message: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
+
     started_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True),
+        nullable=True,
     )
+
     completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Relationships
-    story: Mapped[Optional["Story"]] = relationship("Story", back_populates="jobs")
+    story: Mapped[Optional["Story"]] = relationship(
+        "Story",
+        back_populates="jobs",
+        lazy="joined",
+    )
 
+    # -------------------------
+    # Helpers
+    # -------------------------
     def __repr__(self) -> str:
-        return f"<Job(id={self.id}, job_id='{self.job_id}', status='{self.status}')>"
+        return (
+            f"<Job id={self.id} "
+            f"type={self.job_type} "
+            f"status={self.status}>"
+        )
 
     @property
     def is_complete(self) -> bool:
-        return self.status in (JobStatus.COMPLETED.value, JobStatus.FAILED.value)
+        return self.status in {
+            JobStatus.COMPLETED,
+            JobStatus.FAILED,
+            JobStatus.CANCELLED,
+        }
 
     @property
     def duration_seconds(self) -> Optional[float]:
-        """Calculate job duration in seconds."""
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
         return None
