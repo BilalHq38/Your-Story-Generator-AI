@@ -22,7 +22,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     conn = op.get_bind()
     inspector = Inspector.from_engine(conn)
-    tables = inspector.get_tables()
+    tables = inspector.get_table_names()
 
     if 'users' not in tables:
         # Create table completely if missing (should match current model)
