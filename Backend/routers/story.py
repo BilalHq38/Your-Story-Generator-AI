@@ -1,25 +1,4 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
 
-from core.auth import get_current_user
-from db.database import get_db
-from models.user import User
-
-router = APIRouter(
-    prefix="/stories",
-    tags=["stories"],
-    dependencies=[Depends(get_current_user)],  # 🔒 PROTECTED
-)
-
-
-@router.get("/")
-def list_stories(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    return {
-        "message": f"Hello {current_user.email}, these are your stories"
-    }
 """Story router - CRUD endpoints for stories and story nodes."""
 
 import asyncio
