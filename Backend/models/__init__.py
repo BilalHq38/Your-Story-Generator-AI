@@ -2,6 +2,7 @@
 
 from models.job import Job, JobStatus, JobType
 from models.story import Story, StoryNode
+from models.user import User
 
 __all__ = [
     "Story",
@@ -9,4 +10,5 @@ __all__ = [
     "Job",
     "JobStatus",
     "JobType",
+    "User",
 ]

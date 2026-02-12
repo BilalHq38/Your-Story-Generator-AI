@@ -9,7 +9,7 @@ from core.config import settings
 from db.database import Base
 
 # Import all models so they're registered with Base.metadata
-from models import Job, Story, StoryNode  # noqa: F401
+from models import Job, Story, StoryNode, User  # noqa: F401
 
 # Alembic Config object
 config = context.config
