@@ -43,12 +43,32 @@ def setup_logging(
         )
 
     elif format_style == "json":
-        formatter = logging.Formatter(
-            '{"time":"%(asctime)s",'
-            '"level":"%(levelname)s",'
-            '"logger":"%(name)s",'
-            '"message":"%(message)s"}'
-        )
+        # Custom JSON Formatter
+        class JsonFormatter(logging.Formatter):
+            def format(self, record):
+                json_log = {
+                    "time": self.formatTime(record, self.datefmt),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": record.getMessage(),
+                }
+                
+                # Add extra fields if present
+                if hasattr(record, "errors"):
+                    json_log["errors"] = record.errors
+                if hasattr(record, "details"):
+                    json_log["details"] = record.details
+                if hasattr(record, "extra"):
+                   json_log["extra"] = record.extra
+
+                # Include exception info if available
+                if record.exc_info:
+                    json_log["exception"] = self.formatException(record.exc_info)
+
+                import json
+                return json.dumps(json_log)
+
+        formatter = JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S")
 
     else:  # detailed
         formatter = logging.Formatter(

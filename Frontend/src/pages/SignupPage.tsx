@@ -10,7 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 export default function SignupPage() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((state) => state.setAuth)
-  
+
   const [formData, setFormData] = useState({
     email: '',
     name: '',
@@ -29,7 +29,7 @@ export default function SignupPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     const { email, name, password, confirmPassword } = formData
 
     if (!email || !password) {
@@ -42,13 +42,13 @@ export default function SignupPage() {
       return
     }
 
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters')
+    if (password.length < 8) {
+      toast.error('Password must be at least 8 characters')
       return
     }
 
     setIsLoading(true)
-    
+
     try {
       const response = await authApi.register({
         email,
@@ -59,7 +59,15 @@ export default function SignupPage() {
       toast.success('Account created successfully!')
       navigate('/app', { replace: true })
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'Registration failed'
+      let message = 'Registration failed'
+      if (error.response?.data?.detail) {
+        if (Array.isArray(error.response.data.detail)) {
+          // Flatten Pydantic validation errors
+          message = error.response.data.detail.map((e: any) => e.msg).join(', ')
+        } else {
+          message = error.response.data.detail
+        }
+      }
       toast.error(message)
     } finally {
       setIsLoading(false)
